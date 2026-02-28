@@ -416,7 +416,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <div className="text-center text-xs text-neutral-500 mb-3">{dbg}</div>
+    
       <div className="pointer-events-none fixed inset-x-0 top-0 h-64 bg-gradient-to-b from-indigo-500/10 via-fuchsia-500/5 to-transparent" />
 
       <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-6 pb-24">
@@ -555,9 +555,9 @@ function TodayView(props: {
                     Выполнено
                   </span>
                 ) : (
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-neutral-300">
-                    Осталось {pretty(remaining)}
-                  </span>
+                  <span className="whitespace-nowrap rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-neutral-300">
+  Осталось {pretty(remaining)}
+</span>
                 )}
               </div>
 
