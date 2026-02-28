@@ -409,7 +409,7 @@ export default function Home() {
   if (loading) {
     return (
       <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center">
-        <div className="text-sm text-neutral-400">Загружаю программу…</div>
+        <div className="text-sm text-neutral-400">Минутку…</div>
       </div>
     )
   }
