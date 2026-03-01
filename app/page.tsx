@@ -71,7 +71,9 @@ export default function Home() {
   const [tab, setTab] = useState<"today" | "stats">("today")
 
   const [loading, setLoading] = useState(true)
-  const [programId, setProgramId] = useState<string | null>(null)
+  const [programId, setProgramId] = useState<number | null>(null)
+  const [isLoadingProgram, setIsLoadingProgram] = useState(true)
+  const [showCustomBuilder, setShowCustomBuilder] = useState(false)
 
   const [day, setDay] = useState(1)
   const [exercises, setExercises] = useState<Exercise[]>([])
@@ -92,7 +94,7 @@ export default function Home() {
 
   const pretty = (n: number) => n.toLocaleString("ru-RU")
 
-  const fetchHistory = async (uid: string, pid: string) => {
+  const fetchHistory = async (uid: string, pid: number) => {
     const { data, error } = await supabase
       .from("user_day_history")
       .select("day_number, local_date, total_done, total_target")
@@ -117,7 +119,7 @@ export default function Home() {
     setHistory(mapped)
   }
 
-  const fetchHistoryBreakdown = async (uid: string, pid: string) => {
+  const fetchHistoryBreakdown = async (uid: string, pid: number) => {
     const { data, error } = await supabase
       .from("user_day_history_exercises")
       .select("exercise_name,reps_done")
@@ -137,7 +139,7 @@ export default function Home() {
     setHistoryByExercise(map)
   }
 
-  const loadDay = async (uid: string, pid: string, dayNumber: number) => {
+  const loadDay = async (uid: string, pid: number, dayNumber: number) => {
     const { data: pd, error: pderr } = await supabase
       .from("program_days")
       .select("id, day_number")
@@ -197,37 +199,25 @@ export default function Home() {
   useEffect(() => {
     const init = async () => {
       setLoading(true)
+      setIsLoadingProgram(true)
       const uid = getOrCreateUserId()
-
-      const { data: program, error: perr } = await supabase
-        .from("programs")
-        .select("id,name,total_days")
-        .eq("name", PROGRAM_NAME)
-        .single()
-
-      if (perr || !program) {
-        setDbg("ERROR program: " + (perr?.message ?? "not found"))
-        setLoading(false)
-        return
-      }
-      setProgramId(program.id)
-
-      let { data: state } = await supabase
+      let { data: state, error: stateErr } = await supabase
         .from("user_state")
         .select("user_id,program_id,current_day")
         .eq("user_id", uid)
         .single()
 
-      if (!state) {
+      if (stateErr && !state) {
         const { data: newState, error: serr } = await supabase
           .from("user_state")
-          .insert({ user_id: uid, program_id: program.id, current_day: 1 })
+          .upsert({ user_id: uid, program_id: null, current_day: 1 })
           .select()
           .single()
 
         if (serr || !newState) {
-          setDbg("ERROR user_state: " + (serr?.message ?? "cannot create"))
+          setDbg("ERROR user_state: " + (serr?.message ?? stateErr.message ?? "cannot create"))
           setLoading(false)
+          setIsLoadingProgram(false)
           return
         }
         state = newState
@@ -236,21 +226,104 @@ export default function Home() {
       if (!state) {
         setDbg("ERROR user_state: still null")
         setLoading(false)
+        setIsLoadingProgram(false)
         return
       }
 
-      setDay(state.current_day)
-      await loadDay(uid, program.id, state.current_day)
-      await fetchHistory(uid, program.id)
-      await fetchHistoryBreakdown(uid, program.id)
+      const currentDay = state.current_day ?? 1
+      const selectedProgramId = state.program_id as number | null
 
-      setDbg(`OK: ${program.name}, day ${state.current_day}`)
+      setDay(currentDay)
+      setProgramId(selectedProgramId)
+
+      if (selectedProgramId == null) {
+        setLoading(false)
+        setIsLoadingProgram(false)
+        return
+      }
+
+      await loadDay(uid, selectedProgramId, currentDay)
+      await fetchHistory(uid, selectedProgramId)
+      await fetchHistoryBreakdown(uid, selectedProgramId)
+
+      setDbg(`OK: ${PROGRAM_NAME}, day ${currentDay}`)
       setLoading(false)
+      setIsLoadingProgram(false)
     }
 
     init()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const chooseBuiltInProgram = async () => {
+    const uid = getOrCreateUserId()
+    setIsLoadingProgram(true)
+
+    const { data: existingProgram, error: existingErr } = await supabase
+      .from("programs")
+      .select("id")
+      .eq("name", PROGRAM_NAME)
+      .is("owner_user_id", null)
+      .limit(1)
+      .maybeSingle()
+
+    if (existingErr) {
+      setDbg("ERROR program select: " + existingErr.message)
+      setIsLoadingProgram(false)
+      return
+    }
+
+    let selectedProgramId = existingProgram?.id as number | undefined
+
+    if (!selectedProgramId) {
+      const { data: createdProgram, error: createErr } = await supabase
+        .from("programs")
+        .insert({
+          name: PROGRAM_NAME,
+          owner_user_id: null,
+          is_public: true,
+          days_count: 100,
+        })
+        .select("id")
+        .single()
+
+      if (createErr || !createdProgram) {
+        setDbg("ERROR program create: " + (createErr?.message ?? "cannot create"))
+        setIsLoadingProgram(false)
+        return
+      }
+
+      selectedProgramId = createdProgram.id as number
+    }
+
+    if (selectedProgramId == null) {
+      setDbg("ERROR program id: missing")
+      setIsLoadingProgram(false)
+      return
+    }
+
+    const { error: updateErr } = await supabase
+      .from("user_state")
+      .update({ program_id: selectedProgramId })
+      .eq("user_id", uid)
+
+    if (updateErr) {
+      setDbg("ERROR program assign: " + updateErr.message)
+      setIsLoadingProgram(false)
+      return
+    }
+
+    setProgramId(selectedProgramId)
+    setShowCustomBuilder(false)
+    setTab("today")
+
+    await loadDay(uid, selectedProgramId, day)
+    await fetchHistory(uid, selectedProgramId)
+    await fetchHistoryBreakdown(uid, selectedProgramId)
+
+    setLoading(false)
+    setIsLoadingProgram(false)
+  }
 
   // ✅ Day progress: equal-weight average across exercises
   const dayTotals = useMemo(() => {
@@ -297,7 +370,7 @@ export default function Home() {
   const nextDay = async (force = false) => {
     if (!allCompleted && !force) return
     const uid = getOrCreateUserId()
-    if (!programId) return
+    if (programId == null) return
 
     const entryDate = localISODate()
 
@@ -390,7 +463,7 @@ export default function Home() {
     return { totalDays, totalReps, streak: current, last7 }
   }, [history])
 
-  if (loading) {
+  if (loading || isLoadingProgram) {
     return (
       <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center">
         <div className="text-sm text-neutral-400">Минутку…</div>
@@ -404,7 +477,17 @@ export default function Home() {
       <div className="pointer-events-none fixed inset-x-0 top-0 h-64 bg-gradient-to-b from-indigo-500/10 via-fuchsia-500/5 to-transparent" />
 
       <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-6 pb-24">
-        {tab === "today" ? (
+        {programId == null ? (
+          showCustomBuilder ? (
+            <CustomProgramBuilder onBack={() => setShowCustomBuilder(false)} />
+          ) : (
+            <ProgramPicker
+              onPickBuiltIn={chooseBuiltInProgram}
+              onPickCustom={() => setShowCustomBuilder(true)}
+              loading={isLoadingProgram}
+            />
+          )
+        ) : tab === "today" ? (
           <TodayView
             day={day}
             exercises={exercises}
@@ -430,7 +513,7 @@ export default function Home() {
             historyByExercise={historyByExercise}
             onReset={async () => {
               const uid = getOrCreateUserId()
-              if (!programId) return
+              if (programId == null) return
 
               await supabase.from("user_exercise_progress").delete().eq("user_id", uid)
               await supabase.from("user_day_history").delete().eq("user_id", uid).eq("program_id", programId)
@@ -455,7 +538,61 @@ export default function Home() {
         )}
       </div>
 
-      <TabBar tab={tab} setTab={setTab} />
+      {programId == null ? null : <TabBar tab={tab} setTab={setTab} />}
+    </div>
+  )
+}
+
+function ProgramPicker(props: {
+  onPickBuiltIn: () => Promise<void>
+  onPickCustom: () => void
+  loading: boolean
+}) {
+  const { onPickBuiltIn, onPickCustom, loading } = props
+
+  return (
+    <div className="my-auto">
+      <div className="text-center">
+        <div className="text-sm text-neutral-400">Выбор программы</div>
+        <div className="mt-1 text-3xl font-semibold tracking-tight">Старт</div>
+      </div>
+
+      <div className="mt-6 space-y-3">
+        <button
+          disabled={loading}
+          onClick={onPickBuiltIn}
+          className="w-full rounded-3xl border border-white/10 bg-white/5 p-5 text-left backdrop-blur transition hover:bg-white/10 active:scale-[0.99] disabled:opacity-60"
+        >
+          <div className="text-base font-semibold text-neutral-100">100 days v.2</div>
+          <div className="mt-1 text-xs text-neutral-400">Встроенная программа</div>
+        </button>
+
+        <button
+          disabled={loading}
+          onClick={onPickCustom}
+          className="w-full rounded-3xl border border-white/10 bg-white/5 p-5 text-left backdrop-blur transition hover:bg-white/10 active:scale-[0.99] disabled:opacity-60"
+        >
+          <div className="text-base font-semibold text-neutral-100">Создать свою</div>
+          <div className="mt-1 text-xs text-neutral-400">Свой план тренировок</div>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function CustomProgramBuilder({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="my-auto">
+      <div className="rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur text-center">
+        <div className="text-base font-semibold text-neutral-100">Создать свою</div>
+        <div className="mt-2 text-xs text-neutral-400">Скоро здесь будет конструктор программы</div>
+        <button
+          onClick={onBack}
+          className="mt-4 h-11 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition active:scale-[0.99] hover:bg-white/10"
+        >
+          Назад
+        </button>
+      </div>
     </div>
   )
 }
