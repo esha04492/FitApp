@@ -1,9 +1,14 @@
 "use client"
 import { useEffect, useMemo, useState } from "react"
 import { supabase } from "./lib/supabase"
-
+import type { Exercise, HistoryEntry } from "./components/types"
+import ProgramPicker from "./components/ProgramPicker"
+import CustomProgramBuilder from "./components/CustomProgramBuilder"
+import TodayView from "./components/TodayView"
+import StatsView from "./components/StatsView"
+import TabBar from "./components/TabBar"
+import { clamp, computeStreaks, localISODate } from "./lib/date"
 const PROGRAM_NAME = "100 days v.2"
-const RESET_PASSWORD = "0000"
 
 function getOrCreateUserId() {
   const key = "user_id"
@@ -12,58 +17,6 @@ function getOrCreateUserId() {
   const id = crypto.randomUUID()
   localStorage.setItem(key, id)
   return id
-}
-
-type Exercise = {
-  id: string // uuid from day_exercises
-  name: string
-  target_reps: number
-  sort_order: number
-}
-
-type HistoryEntry = {
-  day: number
-  date: string // YYYY-MM-DD (локальная дата)
-  totalDone: number
-  totalTarget: number
-}
-
-function clamp(val: number, min: number, max: number) {
-  return Math.max(min, Math.min(val, max))
-}
-
-function localISODate() {
-  return new Date().toLocaleDateString("sv-SE") // YYYY-MM-DD
-}
-
-function parseLocalDate(d: string) {
-  return new Date(`${d}T00:00:00`)
-}
-
-function diffDays(a: string, b: string) {
-  const da = parseLocalDate(a).getTime()
-  const db = parseLocalDate(b).getTime()
-  return Math.round((da - db) / (1000 * 60 * 60 * 24))
-}
-
-function computeStreaks(history: HistoryEntry[]) {
-  if (history.length === 0) return { current: 0, best: 0 }
-
-  const sorted = [...history].sort((a, b) => a.day - b.day)
-
-  let best = 0
-  let current = 0
-  for (const entry of sorted) {
-    const isCompletedDay = entry.totalTarget > 0 && entry.totalDone >= entry.totalTarget
-    if (isCompletedDay) {
-      current += 1
-      best = Math.max(best, current)
-    } else {
-      current = 0
-    }
-  }
-
-  return { current, best }
 }
 
 export default function Home() {
@@ -267,26 +220,45 @@ export default function Home() {
       .select("id")
       .eq("name", PROGRAM_NAME)
       .is("owner_user_id", null)
-      .order("id", { ascending: true })
-      .limit(1)
+      .order("id", { ascending: false })
+      .limit(50)
 
-    if (!existingBuiltInErr) {
-      const first = existingBuiltIn?.[0]
-      if (first?.id != null) selectedProgramId = first.id
+    if (!existingBuiltInErr && existingBuiltIn?.length) {
+      for (const row of existingBuiltIn) {
+        const { data: firstDay } = await supabase
+          .from("program_days")
+          .select("id")
+          .eq("program_id", row.id)
+          .eq("day_number", 1)
+          .limit(1)
+        if (firstDay && firstDay.length > 0) {
+          selectedProgramId = row.id
+          break
+        }
+      }
     }
 
-    // Fallback: если owner_user_id в старых данных заполнен, берём любую программу по имени.
     if (selectedProgramId == null) {
       const { data: anyByName, error: anyByNameErr } = await supabase
         .from("programs")
         .select("id")
         .eq("name", PROGRAM_NAME)
-        .order("id", { ascending: true })
-        .limit(1)
+        .order("id", { ascending: false })
+        .limit(50)
 
-      if (!anyByNameErr) {
-        const first = anyByName?.[0]
-        if (first?.id != null) selectedProgramId = first.id
+      if (!anyByNameErr && anyByName?.length) {
+        for (const row of anyByName) {
+          const { data: firstDay } = await supabase
+            .from("program_days")
+            .select("id")
+            .eq("program_id", row.id)
+            .eq("day_number", 1)
+            .limit(1)
+          if (firstDay && firstDay.length > 0) {
+            selectedProgramId = row.id
+            break
+          }
+        }
       }
     }
 
@@ -319,11 +291,6 @@ export default function Home() {
       }
     }
 
-    if (selectedProgramId == null) {
-      setIsLoadingProgram(false)
-      return
-    }
-
     await loadDay(uid, selectedProgramId, startDay)
     await fetchHistory(uid, selectedProgramId)
     await fetchHistoryBreakdown(uid, selectedProgramId)
@@ -331,8 +298,123 @@ export default function Home() {
     setLoading(false)
     setIsLoadingProgram(false)
   }
+  const createCustomProgram = async (payload: {
+    name: string
+    exercises: Array<{ name: string; target: number; unit: "reps" | "steps" }>
+  }) => {
+    const uid = getOrCreateUserId()
+    const programName = payload.name.trim()
+    const exList = payload.exercises
+      .map((x) => ({
+        name: x.name.trim(),
+        target: Math.max(1, Number(x.target) || 0),
+        unit: x.unit,
+      }))
+      .filter((x) => x.name.length > 0)
 
-  // ✅ Day progress: equal-weight average across exercises
+    if (!programName) return { ok: false, error: "Р вЂ™Р Р†Р ВµР Т‘Р С‘РЎвЂљР Вµ Р Р…Р В°Р В·Р Р†Р В°Р Р…Р С‘Р Вµ Р С—РЎР‚Р С•Р С–РЎР‚Р В°Р СР СРЎвЂ№" }
+    if (exList.length === 0) return { ok: false, error: "Р вЂќР С•Р В±Р В°Р Р†РЎРЉРЎвЂљР Вµ РЎвЂ¦Р С•РЎвЂљРЎРЏ Р В±РЎвЂ№ Р С•Р Т‘Р Р…Р С• РЎС“Р С—РЎР‚Р В°Р В¶Р Р…Р ВµР Р…Р С‘Р Вµ" }
+
+    setIsLoadingProgram(true)
+    setDbg("")
+
+    try {
+      const { data: createdProgram, error: programErr } = await supabase
+        .from("programs")
+        .insert({
+          name: programName,
+          owner_user_id: uid,
+          is_public: false,
+          days_count: 100,
+        })
+        .select("id")
+        .single()
+
+      if (programErr || !createdProgram) {
+        setIsLoadingProgram(false)
+        return { ok: false, error: programErr?.message ?? "Р СњР Вµ РЎС“Р Т‘Р В°Р В»Р С•РЎРѓРЎРЉ РЎРѓР С•Р В·Р Т‘Р В°РЎвЂљРЎРЉ Р С—РЎР‚Р С•Р С–РЎР‚Р В°Р СР СРЎС“" }
+      }
+
+      const programIdNew = createdProgram.id as string | number
+      const dayRows = Array.from({ length: 100 }, (_, i) => ({
+        program_id: programIdNew,
+        day_number: i + 1,
+      }))
+
+      const { data: insertedDays, error: daysErr } = await supabase
+        .from("program_days")
+        .insert(dayRows)
+        .select("id,day_number")
+
+      if (daysErr || !insertedDays || insertedDays.length === 0) {
+        setIsLoadingProgram(false)
+        return { ok: false, error: daysErr?.message ?? "Р СњР Вµ РЎС“Р Т‘Р В°Р В»Р С•РЎРѓРЎРЉ РЎРѓР С•Р В·Р Т‘Р В°РЎвЂљРЎРЉ Р Т‘Р Р…Р С‘ Р С—РЎР‚Р С•Р С–РЎР‚Р В°Р СР СРЎвЂ№" }
+      }
+
+      const sortedDays = [...insertedDays].sort((a, b) => a.day_number - b.day_number)
+      const exerciseRows = sortedDays.flatMap((d) =>
+        exList.map((ex, index) => ({
+          program_day_id: d.id,
+          name: ex.name,
+          target: ex.target,
+          unit: ex.unit,
+          weight: null,
+          sort_order: index + 1,
+        }))
+      )
+
+      const { error: exerciseErr1 } = await supabase.from("day_exercises").insert(exerciseRows)
+      if (exerciseErr1) {
+        const fallbackRows = sortedDays.flatMap((d) =>
+          exList.map((ex, index) => ({
+            program_day_id: d.id,
+            name: ex.name,
+            target_reps: ex.target,
+            sort_order: index + 1,
+          }))
+        )
+        const { error: exerciseErr2 } = await supabase.from("day_exercises").insert(fallbackRows)
+        if (exerciseErr2) {
+          setIsLoadingProgram(false)
+          return { ok: false, error: exerciseErr2.message ?? exerciseErr1.message ?? "Р СњР Вµ РЎС“Р Т‘Р В°Р В»Р С•РЎРѓРЎРЉ РЎРѓР С•Р В·Р Т‘Р В°РЎвЂљРЎРЉ РЎС“Р С—РЎР‚Р В°Р В¶Р Р…Р ВµР Р…Р С‘РЎРЏ" }
+        }
+      }
+
+      const { error: stateErr } = await supabase.from("user_state").upsert(
+        {
+          user_id: uid,
+          program_id: programIdNew,
+          current_day: 1,
+        },
+        { onConflict: "user_id" }
+      )
+
+      if (stateErr) {
+        setIsLoadingProgram(false)
+        return { ok: false, error: stateErr.message ?? "Р СњР Вµ РЎС“Р Т‘Р В°Р В»Р С•РЎРѓРЎРЉ Р С•Р В±Р Р…Р С•Р Р†Р С‘РЎвЂљРЎРЉ РЎРѓР С•РЎРѓРЎвЂљР С•РЎРЏР Р…Р С‘Р Вµ Р С—Р С•Р В»РЎРЉР В·Р С•Р Р†Р В°РЎвЂљР ВµР В»РЎРЏ" }
+      }
+
+      setProgramId(programIdNew)
+      setShowCustomBuilder(false)
+      setTab("today")
+      setDay(1)
+      setProgress({})
+      setCustomInput({})
+
+      await loadDay(uid, programIdNew, 1)
+      await fetchHistory(uid, programIdNew)
+      await fetchHistoryBreakdown(uid, programIdNew)
+
+      setLoading(false)
+      setIsLoadingProgram(false)
+      return { ok: true }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Р СњР ВµР С‘Р В·Р Р†Р ВµРЎРѓРЎвЂљР Р…Р В°РЎРЏ Р С•РЎв‚¬Р С‘Р В±Р С”Р В°"
+      setIsLoadingProgram(false)
+      return { ok: false, error: message }
+    }
+  }
+  // Р Р†РЎС™РІР‚В¦ Day progress: equal-weight average across exercises
   const dayTotals = useMemo(() => {
     if (exercises.length === 0) return { pct: 0 }
 
@@ -457,8 +539,8 @@ export default function Home() {
 
   const totalsSplit = useMemo(() => {
     const entries = Object.entries(historyByExercise)
-    const steps = entries.reduce((s, [name, v]) => s + (name.toLowerCase() === "шаги" ? v : 0), 0)
-    const others = entries.reduce((s, [name, v]) => s + (name.toLowerCase() === "шаги" ? 0 : v), 0)
+    const steps = entries.reduce((s, [name, v]) => s + (name.toLowerCase() === "Р РЋРІвЂљВ¬Р В Р’В°Р В РЎвЂ“Р В РЎвЂ" ? v : 0), 0)
+    const others = entries.reduce((s, [name, v]) => s + (name.toLowerCase() === "Р РЋРІвЂљВ¬Р В Р’В°Р В РЎвЂ“Р В РЎвЂ" ? 0 : v), 0)
     return { steps, others }
   }, [historyByExercise])
 
@@ -473,7 +555,7 @@ export default function Home() {
   if (loading || isLoadingProgram) {
     return (
       <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center">
-        <div className="text-sm text-neutral-400">Минутку…</div>
+        <div className="text-sm text-neutral-400">Р В РЎС™Р В РЎвЂР В Р вЂ¦Р РЋРЎвЂњР РЋРІР‚С™Р В РЎвЂќР РЋРЎвЂњР Р†Р вЂљР’В¦</div>
       </div>
     )
   }
@@ -486,7 +568,7 @@ export default function Home() {
       <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-6 pb-24">
         {programId == null ? (
           showCustomBuilder ? (
-            <CustomProgramBuilder onBack={() => setShowCustomBuilder(false)} />
+            <CustomProgramBuilder onBack={() => setShowCustomBuilder(false)} onCreate={createCustomProgram} />
           ) : (
             <ProgramPicker
               onPickBuiltIn={chooseBuiltInProgram}
@@ -547,556 +629,5 @@ export default function Home() {
 
       {programId == null ? null : <TabBar tab={tab} setTab={setTab} />}
     </div>
-  )
-}
-
-function ProgramPicker(props: {
-  onPickBuiltIn: () => Promise<void>
-  onPickCustom: () => void
-  loading: boolean
-}) {
-  const { onPickBuiltIn, onPickCustom, loading } = props
-
-  return (
-    <div className="my-auto">
-      <div className="text-center">
-        <div className="mt-1 text-2xl font-semibold tracking-tight">
-          Добро пожаловать!
-          <br />
-          Выбери программу или создай свою
-        </div>
-      </div>
-
-      <div className="mt-6 space-y-3">
-        <button
-          disabled={loading}
-          onClick={onPickBuiltIn}
-          className="w-full rounded-3xl border border-white/10 bg-white/5 p-5 text-left backdrop-blur transition hover:bg-white/10 active:scale-[0.99] disabled:opacity-60"
-        >
-          <div className="text-base font-semibold text-neutral-100">100 days v.2</div>
-          <div className="mt-1 text-xs text-neutral-400">Встроенная программа</div>
-        </button>
-
-        <button
-          disabled={loading}
-          onClick={onPickCustom}
-          className="w-full rounded-3xl border border-white/10 bg-white/5 p-5 text-left backdrop-blur transition hover:bg-white/10 active:scale-[0.99] disabled:opacity-60"
-        >
-          <div className="text-base font-semibold text-neutral-100">Создать свою</div>
-          <div className="mt-1 text-xs text-neutral-400">Свой план тренировок</div>
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function CustomProgramBuilder({ onBack }: { onBack: () => void }) {
-  return (
-    <div className="my-auto">
-      <div className="rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur text-center">
-        <div className="text-base font-semibold text-neutral-100">Создать свою</div>
-        <div className="mt-2 text-xs text-neutral-400">Скоро здесь будет конструктор программы</div>
-        <button
-          onClick={onBack}
-          className="mt-4 h-11 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition active:scale-[0.99] hover:bg-white/10"
-        >
-          Назад
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function TodayView(props: {
-  day: number
-  currentStreak: number
-  exercises: Exercise[]
-  progress: Record<string, number>
-  customInput: Record<string, string>
-  setCustomInput: React.Dispatch<React.SetStateAction<Record<string, string>>>
-  updateReps: (id: string, change: number, target: number) => Promise<void>
-  addCustomReps: (id: string, target: number) => Promise<void>
-  nextDay: () => Promise<void>
-  skipDay: () => Promise<void>
-  allCompleted: boolean
-  dayTotals: { pct: number }
-  pretty: (n: number) => string
-}) {
-  const [showSkip, setShowSkip] = useState(false)
-  const [showOnboarding, setShowOnboarding] = useState(false)
-  const {
-    day,
-    currentStreak,
-    exercises,
-    progress,
-    customInput,
-    setCustomInput,
-    updateReps,
-    addCustomReps,
-    nextDay,
-    skipDay,
-    allCompleted,
-    dayTotals,
-    pretty,
-  } = props
-
-  useEffect(() => {
-    const dismissed = localStorage.getItem("onboarding_dismissed")
-    setShowOnboarding(dismissed !== "1")
-  }, [])
-
-  const dismissOnboarding = () => {
-    localStorage.setItem("onboarding_dismissed", "1")
-    setShowOnboarding(false)
-  }
-
-  return (
-    <>
-      {/* Header */}
-      <div className="mb-7 text-center">
-        <div className="text-sm text-neutral-400">Тренировка</div>
-        <div className="mt-1 flex items-center justify-center gap-2">
-          <div className="text-3xl font-semibold tracking-tight">{"День "}{day}</div>
-          {currentStreak > 0 ? (
-            <span className="animate-pulse rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs text-amber-300">
-              {"🔥 Дней подряд "}
-              <span className="font-bold">{currentStreak}</span>
-              {" 🔥"}
-            </span>
-          ) : null}
-        </div>
-
-        {/* Day summary */}
-        <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur">
-          <div className="flex items-end justify-between gap-3">
-            <div className="text-left">
-              <div className="text-xs text-neutral-400">Прогресс дня</div>
-              <div className="mt-1 text-3xl font-semibold tabular-nums">{dayTotals.pct}%</div>
-            </div>
-
-            <div className="text-right text-xs text-neutral-500">{allCompleted ? "День закрыт ✅" : "До закрытия дня"}</div>
-          </div>
-
-          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-indigo-400 via-fuchsia-400 to-sky-400 transition-all duration-300"
-              style={{ width: `${dayTotals.pct}%` }}
-            />
-          </div>
-        </div>
-      </div>
-
-      {showOnboarding ? (
-        <div className="relative mb-4 rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-          <button
-            onClick={dismissOnboarding}
-            className="absolute right-3 top-3 h-7 w-7 rounded-full border border-white/10 bg-white/5 text-xs text-neutral-300 transition hover:bg-white/10 hover:text-neutral-100"
-            aria-label="Закрыть онбординг"
-          >
-            X
-          </button>
-          <div className="pr-10 text-center">
-            <div className="text-sm font-semibold text-neutral-100">FitStreak — 100 дней дисциплины</div>
-            <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-neutral-300">
-              {"Это приложение для 100-дневного челленджа. Каждый день отмечай выполнение упражнений, следи за серией (streak) и старайся не прерывать её.\nМожно пропустить день, но серия обнулится.\nЖми «Следующий день», когда закроешь все упражнения. Погнали 💪"}
-            </p>
-          </div>
-        </div>
-      ) : null}
-
-      {/* Exercises */}
-      <div className="space-y-4">
-        {exercises.map((ex) => {
-          const reps = progress[ex.id] || 0
-          const isCompleted = reps >= ex.target_reps
-          const percent = clamp(Math.round((reps / ex.target_reps) * 100), 0, 100)
-          const remaining = Math.max(ex.target_reps - reps, 0)
-          const isSteps = ex.name.toLowerCase() === "шаги"
-
-          return (
-            <div
-              key={ex.id}
-              className={`rounded-3xl border bg-white/5 p-4 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)] backdrop-blur ${
-                isCompleted ? "border-emerald-400/40" : "border-white/10"
-              }`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm text-neutral-400">Упражнение</div>
-                  <div className="mt-0.5 text-lg font-semibold">{ex.name}</div>
-                </div>
-
-                {isCompleted ? (
-                  <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200">
-                    Выполнено
-                  </span>
-                ) : (
-                  <span className="whitespace-nowrap rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-neutral-300">
-  Осталось {pretty(remaining)}
-</span>
-                )}
-              </div>
-
-              {/* Big reps */}
-              <div className="mt-4 flex items-end justify-between gap-3">
-                <div className="text-4xl font-semibold tabular-nums tracking-tight">
-                  {pretty(reps)}
-                  <span className="text-xl text-neutral-500"> / {pretty(ex.target_reps)}</span>
-                </div>
-                <div className="text-sm text-neutral-400 tabular-nums">{percent}%</div>
-              </div>
-
-              {/* Progress bar */}
-              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
-                <div
-                  className={`h-full rounded-full transition-all duration-300 ${
-                    isCompleted
-                      ? "bg-gradient-to-r from-emerald-300 to-emerald-500"
-                      : "bg-gradient-to-r from-indigo-400 via-fuchsia-400 to-sky-400"
-                  }`}
-                  style={{ width: `${percent}%` }}
-                />
-              </div>
-
-              {/* Controls */}
-              <div className="mt-4 grid grid-cols-4 gap-2">
-                {isSteps ? (
-                  <>
-                    <ActionBtn variant="ghost" onClick={() => updateReps(ex.id, -2000, ex.target_reps)}>
-                      −2000
-                    </ActionBtn>
-                    <ActionBtn variant="ghost" onClick={() => updateReps(ex.id, -1000, ex.target_reps)}>
-                      −1000
-                    </ActionBtn>
-                    <ActionBtn variant="primary" onClick={() => updateReps(ex.id, 1000, ex.target_reps)}>
-                      +1000
-                    </ActionBtn>
-                    <ActionBtn variant="primaryStrong" onClick={() => updateReps(ex.id, 2000, ex.target_reps)}>
-                      +2000
-                    </ActionBtn>
-                  </>
-                ) : (
-                  <>
-                    <ActionBtn variant="ghost" onClick={() => updateReps(ex.id, -10, ex.target_reps)}>
-                      −10
-                    </ActionBtn>
-                    <ActionBtn variant="ghost" onClick={() => updateReps(ex.id, -5, ex.target_reps)}>
-                      −5
-                    </ActionBtn>
-                    <ActionBtn variant="primary" onClick={() => updateReps(ex.id, 5, ex.target_reps)}>
-                      +5
-                    </ActionBtn>
-                    <ActionBtn variant="primaryStrong" onClick={() => updateReps(ex.id, 10, ex.target_reps)}>
-                      +10
-                    </ActionBtn>
-                  </>
-                )}
-              </div>
-
-              {/* Custom input 50/50 */}
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <input
-                  inputMode="numeric"
-                  type="number"
-                  placeholder="Свое число"
-                  value={customInput[ex.id] || ""}
-                  onChange={(e) =>
-                    setCustomInput((prev) => ({
-                      ...prev,
-                      [ex.id]: e.target.value,
-                    }))
-                  }
-                  className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-100 placeholder:text-neutral-500 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
-                />
-
-                <button
-                  onClick={() => addCustomReps(ex.id, ex.target_reps)}
-                  className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 shadow-sm transition active:scale-[0.99] hover:bg-white/10"
-                >
-                  Добавить
-                </button>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Next day */}
-      <div className="mt-6">
-        <button
-          disabled={!allCompleted}
-          onClick={nextDay}
-          className={`h-12 w-full rounded-2xl px-4 text-sm font-semibold shadow-sm transition active:scale-[0.99] ${
-            allCompleted
-              ? "bg-gradient-to-r from-emerald-400 to-emerald-600 text-neutral-950"
-              : "bg-white/5 text-neutral-500 border border-white/10 cursor-not-allowed"
-          }`}
-        >
-          Следующий день
-        </button>
-        <button
-          onClick={() => setShowSkip(true)}
-          className="mt-3 text-xs text-neutral-500 hover:text-neutral-300 transition"
-        >
-          {"Пропустить день"}
-        </button>
-      </div>
-
-      {showSkip ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
-          <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-neutral-900 px-5 py-4 shadow-2xl">
-            <div className="text-base font-semibold text-neutral-100">
-              {"Ты уверен, что хочешь пропустить день?"}
-            </div>
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <button
-                onClick={() => setShowSkip(false)}
-                className="h-11 flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition active:scale-[0.99] hover:bg-white/10"
-              >
-                {"Нет"}
-              </button>
-              <button
-                onClick={async () => {
-                  setShowSkip(false)
-                  await skipDay()
-                }}
-                className="h-9 rounded-xl border border-red-400/30 bg-red-500/15 px-3 text-xs font-semibold text-red-200 transition active:scale-[0.99] hover:bg-red-500/25"
-              >
-                {"Да"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </>
-  )
-}
-
-function StatsView(props: {
-  totalsSplit: { steps: number; others: number }
-  day: number
-  dayTotals: { pct: number }
-  history: HistoryEntry[]
-  stats: { totalDays: number; totalReps: number; streak: number; last7: HistoryEntry[] }
-  historyByExercise: Record<string, number>
-  onReset: () => void
-}) {
-  const { day, dayTotals, history, stats, historyByExercise, onReset, totalsSplit } = props
-
-  const last = useMemo(() => {
-    if (history.length === 0) return null
-    return [...history].sort((a, b) => (a.date > b.date ? -1 : 1))[0]
-  }, [history])
-
-  const [resetPwd, setResetPwd] = useState("")
-  const [resetError, setResetError] = useState<string | null>(null)
-
-  const doReset = async () => {
-    if (resetPwd !== RESET_PASSWORD) {
-      setResetError("Неверный пароль")
-      return
-    }
-    setResetError(null)
-    await onReset()
-    setResetPwd("")
-  }
-
-  return (
-    <>
-      <div className="mb-7 text-center">
-        <div className="text-sm text-neutral-400">Статистика</div>
-        <div className="mt-1 text-3xl font-semibold tracking-tight">Сводка</div>
-
-        <div className="mt-4 grid grid-cols-2 gap-3">
-<StatCard label="Дней завершено" value={String(stats.totalDays)} />
-<StatCard label="Шагов всего" value={totalsSplit.steps.toLocaleString("ru-RU")} />
-<StatCard label="Повторений всего" value={totalsSplit.others.toLocaleString("ru-RU")} />
-<StatCard label="Streak" value={String(stats.streak)} />
-        </div>
-
-        <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur text-left">
-          <div className="text-xs text-neutral-400">Сейчас (День {day})</div>
-          <div className="mt-1 flex items-end justify-between">
-            <div className="text-2xl font-semibold tabular-nums">{dayTotals.pct}%</div>
-            <div className="text-xs text-neutral-500">{last ? `Последнее: ${last.date} (День ${last.day})` : "Пока нет завершений"}</div>
-          </div>
-          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-indigo-400 via-fuchsia-400 to-sky-400 transition-all duration-300"
-              style={{ width: `${dayTotals.pct}%` }}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-          <div className="text-sm font-semibold">Последние 7 дней</div>
-          <div className="mt-3 space-y-2">
-            {stats.last7.length === 0 ? (
-              <div className="text-sm text-neutral-400">Когда завершишь день — тут появится история.</div>
-            ) : (
-              stats.last7.map((h) => (
-                <div
-                  key={`${h.date}-${h.day}`}
-                  className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2"
-                >
-                  <div>
-                    <div className="text-sm font-semibold">День {h.day}</div>
-                    <div className="text-xs text-neutral-400">{h.date}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm font-semibold tabular-nums">
-                      {h.totalDone.toLocaleString("ru-RU")}
-                      <span className="text-neutral-500"> / {h.totalTarget.toLocaleString("ru-RU")}</span>
-                    </div>
-                    <div className="text-xs text-neutral-400 tabular-nums">
-                      {h.totalTarget ? Math.round((h.totalDone / h.totalTarget) * 100) : 0}%
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-          <div className="text-sm font-semibold">Повторения по упражнениям</div>
-          <div className="mt-3 space-y-2">
-            {Object.keys(historyByExercise).length === 0 ? (
-              <div className="text-sm text-neutral-400">Пока нет данных. Закрой хотя бы один день.</div>
-            ) : (
-              Object.entries(historyByExercise)
-                .sort((a, b) => b[1] - a[1])
-                .map(([name, reps]) => (
-                  <div
-                    key={name}
-                    className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2"
-                  >
-                    <div className="text-sm font-semibold">{name}</div>
-                    <div className="text-sm font-semibold tabular-nums">{reps.toLocaleString("ru-RU")}</div>
-                  </div>
-                ))
-            )}
-          </div>
-        </div>
-
-        {/* Reset (password protected) */}
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-          <div className="text-sm font-semibold">Сброс</div>
-          <div className="mt-1 text-xs text-neutral-400">Защита от случайного нажатия. Пароль: 0000</div>
-
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <input
-              type="password"
-              inputMode="numeric"
-              placeholder="Пароль"
-              value={resetPwd}
-              onChange={(e) => setResetPwd(e.target.value)}
-              className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-100 placeholder:text-neutral-500 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
-            />
-            <button
-              onClick={doReset}
-              className="h-11 w-full rounded-2xl border border-red-400/20 bg-red-500/10 px-4 text-sm font-semibold text-red-200 transition active:scale-[0.99] hover:bg-red-500/15"
-            >
-              Сбросить всё
-            </button>
-          </div>
-
-          {resetError ? <div className="mt-2 text-xs text-red-200">{resetError}</div> : null}
-        </div>
-
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-          <div className="text-sm font-semibold">{"Поддержка"}</div>
-          <div className="mt-1 text-xs text-neutral-400">{"Если что-то сломалось или есть идеи - напиши:"}</div>
-          <a
-            href="https://t.me/esha04"
-            target="_blank"
-            rel="noreferrer"
-            className="mt-3 inline-flex h-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition active:scale-[0.99] hover:bg-white/10"
-          >
-            {"Написать в Telegram"}
-          </a>
-        </div>
-      </div>
-    </>
-  )
-}
-
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur text-left">
-      <div className="text-xs text-neutral-400">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
-    </div>
-  )
-}
-
-function TabBar({
-  tab,
-  setTab,
-}: {
-  tab: "today" | "stats"
-  setTab: (t: "today" | "stats") => void
-}) {
-  return (
-    <div className="fixed inset-x-0 bottom-0 border-t border-white/10 bg-neutral-950/70 backdrop-blur">
-      <div className="mx-auto grid max-w-md grid-cols-2 gap-2 px-5 py-3">
-        <TabBtn active={tab === "today"} onClick={() => setTab("today")}>
-          Сегодня
-        </TabBtn>
-        <TabBtn active={tab === "stats"} onClick={() => setTab("stats")}>
-          Статистика
-        </TabBtn>
-      </div>
-    </div>
-  )
-}
-
-function TabBtn({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`h-11 rounded-2xl px-4 text-sm font-semibold transition active:scale-[0.99] ${
-        active
-          ? "bg-white/10 text-neutral-100 border border-white/15"
-          : "bg-white/5 text-neutral-400 border border-white/10 hover:bg-white/8"
-      }`}
-    >
-      {children}
-    </button>
-  )
-}
-
-function ActionBtn({
-  children,
-  onClick,
-  variant,
-}: {
-  children: React.ReactNode
-  onClick: () => void
-  variant: "ghost" | "primary" | "primaryStrong"
-}) {
-  const base =
-    "h-11 rounded-2xl px-3 text-sm font-semibold transition shadow-sm active:scale-[0.99] border"
-  const styles =
-    variant === "ghost"
-      ? "border-white/10 bg-white/5 text-neutral-100 hover:bg-white/10"
-      : variant === "primary"
-      ? "border-white/10 bg-white/10 text-neutral-100 hover:bg-white/15"
-      : "border-white/10 bg-gradient-to-r from-indigo-400 via-fuchsia-400 to-sky-400 text-neutral-950 hover:opacity-95"
-
-  return (
-    <button onClick={onClick} className={`${base} ${styles}`}>
-      {children}
-    </button>
   )
 }
