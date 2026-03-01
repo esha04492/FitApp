@@ -49,35 +49,18 @@ function diffDays(a: string, b: string) {
 function computeStreaks(history: HistoryEntry[]) {
   if (history.length === 0) return { current: 0, best: 0 }
 
-  const sorted = [...history].sort((x, y) => (x.date > y.date ? 1 : -1))
+  const sorted = [...history].sort((a, b) => a.day - b.day)
 
-  // BEST streak
-  let best = 1
-  let run = 1
-  for (let i = 1; i < sorted.length; i++) {
-    const gap = diffDays(sorted[i].date, sorted[i - 1].date)
-    if (gap === 1) {
-      run += 1
-      best = Math.max(best, run)
-    } else if (gap === 0) {
-      continue
+  let best = 0
+  let current = 0
+  for (const entry of sorted) {
+    const isCompletedDay = entry.totalTarget > 0 && entry.totalDone >= entry.totalTarget
+    if (isCompletedDay) {
+      current += 1
+      best = Math.max(best, current)
     } else {
-      run = 1
+      current = 0
     }
-  }
-
-  // CURRENT streak
-  const today = localISODate()
-  const last = sorted[sorted.length - 1].date
-  const lastGapToToday = diffDays(today, last)
-  if (lastGapToToday > 1) return { current: 0, best }
-
-  let current = 1
-  for (let i = sorted.length - 1; i >= 1; i--) {
-    const gap = diffDays(sorted[i].date, sorted[i - 1].date)
-    if (gap === 1) current += 1
-    else if (gap === 0) continue
-    else break
   }
 
   return { current, best }
@@ -433,6 +416,7 @@ export default function Home() {
             skipDay={() => nextDay(true)}
             allCompleted={allCompleted}
             dayTotals={dayTotals}
+            currentStreak={stats.streak}
             pretty={pretty}
           />
         ) : (
@@ -477,6 +461,7 @@ export default function Home() {
 
 function TodayView(props: {
   day: number
+  currentStreak: number
   exercises: Exercise[]
   progress: Record<string, number>
   customInput: Record<string, string>
@@ -492,6 +477,7 @@ function TodayView(props: {
   const [showSkip, setShowSkip] = useState(false)
   const {
     day,
+    currentStreak,
     exercises,
     progress,
     customInput,
@@ -510,7 +496,16 @@ function TodayView(props: {
       {/* Header */}
       <div className="mb-7 text-center">
         <div className="text-sm text-neutral-400">Тренировка</div>
-        <div className="mt-1 text-3xl font-semibold tracking-tight">День {day}</div>
+        <div className="mt-1 flex items-center justify-center gap-2">
+          <div className="text-3xl font-semibold tracking-tight">{"\u0414\u0435\u043d\u044c "}{day}</div>
+          {currentStreak > 0 ? (
+            <span className="animate-pulse rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs text-amber-300">
+              {"\ud83d\udd25 \u0414\u043d\u0435\u0439 \u043f\u043e\u0434\u0440\u044f\u0434 "}
+              <span className="font-bold">{currentStreak}</span>
+              {" \ud83d\udd25"}
+            </span>
+          ) : null}
+        </div>
 
         {/* Day summary */}
         <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur">
