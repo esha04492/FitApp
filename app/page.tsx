@@ -23,7 +23,7 @@ type Exercise = {
 
 type HistoryEntry = {
   day: number
-  date: string // YYYY-MM-DD (локальная дата)
+  date: string // YYYY-MM-DD (Р»РѕРєР°Р»СЊРЅР°СЏ РґР°С‚Р°)
   totalDone: number
   totalTarget: number
 }
@@ -252,7 +252,7 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ✅ Day progress: equal-weight average across exercises
+  // вњ… Day progress: equal-weight average across exercises
   const dayTotals = useMemo(() => {
     if (exercises.length === 0) return { pct: 0 }
 
@@ -377,8 +377,8 @@ export default function Home() {
 
   const totalsSplit = useMemo(() => {
     const entries = Object.entries(historyByExercise)
-    const steps = entries.reduce((s, [name, v]) => s + (name.toLowerCase() === "шаги" ? v : 0), 0)
-    const others = entries.reduce((s, [name, v]) => s + (name.toLowerCase() === "шаги" ? 0 : v), 0)
+    const steps = entries.reduce((s, [name, v]) => s + (name.toLowerCase() === "С€Р°РіРё" ? v : 0), 0)
+    const others = entries.reduce((s, [name, v]) => s + (name.toLowerCase() === "С€Р°РіРё" ? 0 : v), 0)
     return { steps, others }
   }, [historyByExercise])
 
@@ -393,7 +393,7 @@ export default function Home() {
   if (loading) {
     return (
       <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center">
-        <div className="text-sm text-neutral-400">Минутку…</div>
+        <div className="text-sm text-neutral-400">РњРёРЅСѓС‚РєСѓвЂ¦</div>
       </div>
     )
   }
@@ -476,6 +476,7 @@ function TodayView(props: {
   pretty: (n: number) => string
 }) {
   const [showSkip, setShowSkip] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
   const {
     day,
     currentStreak,
@@ -492,11 +493,21 @@ function TodayView(props: {
     pretty,
   } = props
 
+  useEffect(() => {
+    const dismissed = localStorage.getItem("onboarding_dismissed")
+    setShowOnboarding(dismissed !== "1")
+  }, [])
+
+  const dismissOnboarding = () => {
+    localStorage.setItem("onboarding_dismissed", "1")
+    setShowOnboarding(false)
+  }
+
   return (
     <>
       {/* Header */}
       <div className="mb-7 text-center">
-        <div className="text-sm text-neutral-400">Тренировка</div>
+        <div className="text-sm text-neutral-400">РўСЂРµРЅРёСЂРѕРІРєР°</div>
         <div className="mt-1 flex items-center justify-center gap-2">
           <div className="text-3xl font-semibold tracking-tight">{"\u0414\u0435\u043d\u044c "}{day}</div>
           {currentStreak > 0 ? (
@@ -512,11 +523,11 @@ function TodayView(props: {
         <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur">
           <div className="flex items-end justify-between gap-3">
             <div className="text-left">
-              <div className="text-xs text-neutral-400">Прогресс дня</div>
+              <div className="text-xs text-neutral-400">РџСЂРѕРіСЂРµСЃСЃ РґРЅСЏ</div>
               <div className="mt-1 text-3xl font-semibold tabular-nums">{dayTotals.pct}%</div>
             </div>
 
-            <div className="text-right text-xs text-neutral-500">{allCompleted ? "День закрыт ✅" : "До закрытия дня"}</div>
+            <div className="text-right text-xs text-neutral-500">{allCompleted ? "Р”РµРЅСЊ Р·Р°РєСЂС‹С‚ вњ…" : "Р”Рѕ Р·Р°РєСЂС‹С‚РёСЏ РґРЅСЏ"}</div>
           </div>
 
           <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
@@ -528,6 +539,24 @@ function TodayView(props: {
         </div>
       </div>
 
+      {showOnboarding ? (
+        <div className="relative mb-4 rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+          <button
+            onClick={dismissOnboarding}
+            className="absolute right-3 top-3 h-7 w-7 rounded-full border border-white/10 bg-white/5 text-xs text-neutral-300 transition hover:bg-white/10 hover:text-neutral-100"
+            aria-label="Р—Р°РєСЂС‹С‚СЊ РѕРЅР±РѕСЂРґРёРЅРі"
+          >
+            X
+          </button>
+          <div className="pr-10 text-center">
+            <div className="text-sm font-semibold text-neutral-100">FitStreak вЂ” 100 РґРЅРµР№ РґРёСЃС†РёРїР»РёРЅС‹</div>
+            <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-neutral-300">
+              {"Р­С‚Рѕ РїСЂРёР»РѕР¶РµРЅРёРµ РґР»СЏ 100-РґРЅРµРІРЅРѕРіРѕ С‡РµР»Р»РµРЅРґР¶Р°. РљР°Р¶РґС‹Р№ РґРµРЅСЊ РѕС‚РјРµС‡Р°Р№ РІС‹РїРѕР»РЅРµРЅРёРµ СѓРїСЂР°Р¶РЅРµРЅРёР№, СЃР»РµРґРё Р·Р° СЃРµСЂРёРµР№ (streak) Рё СЃС‚Р°СЂР°Р№СЃСЏ РЅРµ РїСЂРµСЂС‹РІР°С‚СЊ РµС‘.\nРњРѕР¶РЅРѕ РїСЂРѕРїСѓСЃС‚РёС‚СЊ РґРµРЅСЊ, РЅРѕ СЃРµСЂРёСЏ РѕР±РЅСѓР»РёС‚СЃСЏ.\nР–РјРё В«РЎР»РµРґСѓСЋС‰РёР№ РґРµРЅСЊВ», РєРѕРіРґР° Р·Р°РєСЂРѕРµС€СЊ РІСЃРµ СѓРїСЂР°Р¶РЅРµРЅРёСЏ. РџРѕРіРЅР°Р»Рё рџ’Є"}
+            </p>
+          </div>
+        </div>
+      ) : null}
+
       {/* Exercises */}
       <div className="space-y-4">
         {exercises.map((ex) => {
@@ -535,7 +564,7 @@ function TodayView(props: {
           const isCompleted = reps >= ex.target_reps
           const percent = clamp(Math.round((reps / ex.target_reps) * 100), 0, 100)
           const remaining = Math.max(ex.target_reps - reps, 0)
-          const isSteps = ex.name.toLowerCase() === "шаги"
+          const isSteps = ex.name.toLowerCase() === "С€Р°РіРё"
 
           return (
             <div
@@ -546,17 +575,17 @@ function TodayView(props: {
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-sm text-neutral-400">Упражнение</div>
+                  <div className="text-sm text-neutral-400">РЈРїСЂР°Р¶РЅРµРЅРёРµ</div>
                   <div className="mt-0.5 text-lg font-semibold">{ex.name}</div>
                 </div>
 
                 {isCompleted ? (
                   <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200">
-                    Выполнено
+                    Р’С‹РїРѕР»РЅРµРЅРѕ
                   </span>
                 ) : (
                   <span className="whitespace-nowrap rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-neutral-300">
-  Осталось {pretty(remaining)}
+  РћСЃС‚Р°Р»РѕСЃСЊ {pretty(remaining)}
 </span>
                 )}
               </div>
@@ -587,10 +616,10 @@ function TodayView(props: {
                 {isSteps ? (
                   <>
                     <ActionBtn variant="ghost" onClick={() => updateReps(ex.id, -2000, ex.target_reps)}>
-                      −2000
+                      в€’2000
                     </ActionBtn>
                     <ActionBtn variant="ghost" onClick={() => updateReps(ex.id, -1000, ex.target_reps)}>
-                      −1000
+                      в€’1000
                     </ActionBtn>
                     <ActionBtn variant="primary" onClick={() => updateReps(ex.id, 1000, ex.target_reps)}>
                       +1000
@@ -602,10 +631,10 @@ function TodayView(props: {
                 ) : (
                   <>
                     <ActionBtn variant="ghost" onClick={() => updateReps(ex.id, -10, ex.target_reps)}>
-                      −10
+                      в€’10
                     </ActionBtn>
                     <ActionBtn variant="ghost" onClick={() => updateReps(ex.id, -5, ex.target_reps)}>
-                      −5
+                      в€’5
                     </ActionBtn>
                     <ActionBtn variant="primary" onClick={() => updateReps(ex.id, 5, ex.target_reps)}>
                       +5
@@ -622,7 +651,7 @@ function TodayView(props: {
                 <input
                   inputMode="numeric"
                   type="number"
-                  placeholder="Свое число"
+                  placeholder="РЎРІРѕРµ С‡РёСЃР»Рѕ"
                   value={customInput[ex.id] || ""}
                   onChange={(e) =>
                     setCustomInput((prev) => ({
@@ -637,7 +666,7 @@ function TodayView(props: {
                   onClick={() => addCustomReps(ex.id, ex.target_reps)}
                   className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 shadow-sm transition active:scale-[0.99] hover:bg-white/10"
                 >
-                  Добавить
+                  Р”РѕР±Р°РІРёС‚СЊ
                 </button>
               </div>
             </div>
@@ -656,7 +685,7 @@ function TodayView(props: {
               : "bg-white/5 text-neutral-500 border border-white/10 cursor-not-allowed"
           }`}
         >
-          Следующий день
+          РЎР»РµРґСѓСЋС‰РёР№ РґРµРЅСЊ
         </button>
         <button
           onClick={() => setShowSkip(true)}
@@ -717,7 +746,7 @@ function StatsView(props: {
 
   const doReset = async () => {
     if (resetPwd !== RESET_PASSWORD) {
-      setResetError("Неверный пароль")
+      setResetError("РќРµРІРµСЂРЅС‹Р№ РїР°СЂРѕР»СЊ")
       return
     }
     setResetError(null)
@@ -728,21 +757,21 @@ function StatsView(props: {
   return (
     <>
       <div className="mb-7 text-center">
-        <div className="text-sm text-neutral-400">Статистика</div>
-        <div className="mt-1 text-3xl font-semibold tracking-tight">Сводка</div>
+        <div className="text-sm text-neutral-400">РЎС‚Р°С‚РёСЃС‚РёРєР°</div>
+        <div className="mt-1 text-3xl font-semibold tracking-tight">РЎРІРѕРґРєР°</div>
 
         <div className="mt-4 grid grid-cols-2 gap-3">
-<StatCard label="Дней завершено" value={String(stats.totalDays)} />
-<StatCard label="Шагов всего" value={totalsSplit.steps.toLocaleString("ru-RU")} />
-<StatCard label="Повторений всего" value={totalsSplit.others.toLocaleString("ru-RU")} />
+<StatCard label="Р”РЅРµР№ Р·Р°РІРµСЂС€РµРЅРѕ" value={String(stats.totalDays)} />
+<StatCard label="РЁР°РіРѕРІ РІСЃРµРіРѕ" value={totalsSplit.steps.toLocaleString("ru-RU")} />
+<StatCard label="РџРѕРІС‚РѕСЂРµРЅРёР№ РІСЃРµРіРѕ" value={totalsSplit.others.toLocaleString("ru-RU")} />
 <StatCard label="Streak" value={String(stats.streak)} />
         </div>
 
         <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur text-left">
-          <div className="text-xs text-neutral-400">Сейчас (День {day})</div>
+          <div className="text-xs text-neutral-400">РЎРµР№С‡Р°СЃ (Р”РµРЅСЊ {day})</div>
           <div className="mt-1 flex items-end justify-between">
             <div className="text-2xl font-semibold tabular-nums">{dayTotals.pct}%</div>
-            <div className="text-xs text-neutral-500">{last ? `Последнее: ${last.date} (День ${last.day})` : "Пока нет завершений"}</div>
+            <div className="text-xs text-neutral-500">{last ? `РџРѕСЃР»РµРґРЅРµРµ: ${last.date} (Р”РµРЅСЊ ${last.day})` : "РџРѕРєР° РЅРµС‚ Р·Р°РІРµСЂС€РµРЅРёР№"}</div>
           </div>
           <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
             <div
@@ -755,10 +784,10 @@ function StatsView(props: {
 
       <div className="space-y-4">
         <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-          <div className="text-sm font-semibold">Последние 7 дней</div>
+          <div className="text-sm font-semibold">РџРѕСЃР»РµРґРЅРёРµ 7 РґРЅРµР№</div>
           <div className="mt-3 space-y-2">
             {stats.last7.length === 0 ? (
-              <div className="text-sm text-neutral-400">Когда завершишь день — тут появится история.</div>
+              <div className="text-sm text-neutral-400">РљРѕРіРґР° Р·Р°РІРµСЂС€РёС€СЊ РґРµРЅСЊ вЂ” С‚СѓС‚ РїРѕСЏРІРёС‚СЃСЏ РёСЃС‚РѕСЂРёСЏ.</div>
             ) : (
               stats.last7.map((h) => (
                 <div
@@ -766,7 +795,7 @@ function StatsView(props: {
                   className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2"
                 >
                   <div>
-                    <div className="text-sm font-semibold">День {h.day}</div>
+                    <div className="text-sm font-semibold">Р”РµРЅСЊ {h.day}</div>
                     <div className="text-xs text-neutral-400">{h.date}</div>
                   </div>
                   <div className="text-right">
@@ -785,10 +814,10 @@ function StatsView(props: {
         </div>
 
         <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-          <div className="text-sm font-semibold">Повторения по упражнениям</div>
+          <div className="text-sm font-semibold">РџРѕРІС‚РѕСЂРµРЅРёСЏ РїРѕ СѓРїСЂР°Р¶РЅРµРЅРёСЏРј</div>
           <div className="mt-3 space-y-2">
             {Object.keys(historyByExercise).length === 0 ? (
-              <div className="text-sm text-neutral-400">Пока нет данных. Закрой хотя бы один день.</div>
+              <div className="text-sm text-neutral-400">РџРѕРєР° РЅРµС‚ РґР°РЅРЅС‹С…. Р—Р°РєСЂРѕР№ С…РѕС‚СЏ Р±С‹ РѕРґРёРЅ РґРµРЅСЊ.</div>
             ) : (
               Object.entries(historyByExercise)
                 .sort((a, b) => b[1] - a[1])
@@ -807,14 +836,14 @@ function StatsView(props: {
 
         {/* Reset (password protected) */}
         <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-          <div className="text-sm font-semibold">Сброс</div>
-          <div className="mt-1 text-xs text-neutral-400">Защита от случайного нажатия. Пароль: 0000</div>
+          <div className="text-sm font-semibold">РЎР±СЂРѕСЃ</div>
+          <div className="mt-1 text-xs text-neutral-400">Р—Р°С‰РёС‚Р° РѕС‚ СЃР»СѓС‡Р°Р№РЅРѕРіРѕ РЅР°Р¶Р°С‚РёСЏ. РџР°СЂРѕР»СЊ: 0000</div>
 
           <div className="mt-3 grid grid-cols-2 gap-2">
             <input
               type="password"
               inputMode="numeric"
-              placeholder="Пароль"
+              placeholder="РџР°СЂРѕР»СЊ"
               value={resetPwd}
               onChange={(e) => setResetPwd(e.target.value)}
               className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-100 placeholder:text-neutral-500 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
@@ -823,11 +852,24 @@ function StatsView(props: {
               onClick={doReset}
               className="h-11 w-full rounded-2xl border border-red-400/20 bg-red-500/10 px-4 text-sm font-semibold text-red-200 transition active:scale-[0.99] hover:bg-red-500/15"
             >
-              Сбросить всё
+              РЎР±СЂРѕСЃРёС‚СЊ РІСЃС‘
             </button>
           </div>
 
           {resetError ? <div className="mt-2 text-xs text-red-200">{resetError}</div> : null}
+        </div>
+
+        <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+          <div className="text-sm font-semibold">Поддержка</div>
+          <div className="mt-1 text-xs text-neutral-400">Если что-то сломалось или есть идеи — напиши:</div>
+          <a
+            href="https://t.me/esha04"
+            target="_blank"
+            rel="noreferrer"
+            className="mt-3 inline-flex h-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition active:scale-[0.99] hover:bg-white/10"
+          >
+            Написать в Telegram
+          </a>
         </div>
       </div>
     </>
@@ -854,10 +896,10 @@ function TabBar({
     <div className="fixed inset-x-0 bottom-0 border-t border-white/10 bg-neutral-950/70 backdrop-blur">
       <div className="mx-auto grid max-w-md grid-cols-2 gap-2 px-5 py-3">
         <TabBtn active={tab === "today"} onClick={() => setTab("today")}>
-          Сегодня
+          РЎРµРіРѕРґРЅСЏ
         </TabBtn>
         <TabBtn active={tab === "stats"} onClick={() => setTab("stats")}>
-          Статистика
+          РЎС‚Р°С‚РёСЃС‚РёРєР°
         </TabBtn>
       </div>
     </div>
