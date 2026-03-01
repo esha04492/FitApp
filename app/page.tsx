@@ -231,7 +231,8 @@ export default function Home() {
       }
 
       const currentDay = state.current_day ?? 1
-      const selectedProgramId = state.program_id as number | null
+      const selectedProgramId =
+        state.program_id == null ? null : Number(state.program_id)
 
       setDay(currentDay)
       setProgramId(selectedProgramId)
@@ -274,7 +275,20 @@ export default function Home() {
       return
     }
 
-    let selectedProgramId = existingProgram?.id as number | undefined
+    let selectedProgramId =
+      existingProgram?.id == null ? undefined : Number(existingProgram.id)
+
+    if (!selectedProgramId) {
+      const { data: anyProgram } = await supabase
+        .from("programs")
+        .select("id")
+        .eq("name", PROGRAM_NAME)
+        .order("id", { ascending: true })
+        .limit(1)
+        .maybeSingle()
+
+      selectedProgramId = anyProgram?.id == null ? undefined : Number(anyProgram.id)
+    }
 
     if (!selectedProgramId) {
       const { data: createdProgram, error: createErr } = await supabase
@@ -289,12 +303,27 @@ export default function Home() {
         .single()
 
       if (createErr || !createdProgram) {
-        setDbg("ERROR program create: " + (createErr?.message ?? "cannot create"))
-        setIsLoadingProgram(false)
-        return
-      }
+        const { data: fallbackProgram, error: fallbackErr } = await supabase
+          .from("programs")
+          .insert({
+            name: PROGRAM_NAME,
+            owner_user_id: null,
+            is_public: true,
+            days_count: 100,
+          })
+          .select("id")
+          .single()
 
-      selectedProgramId = createdProgram.id as number
+        if (fallbackErr || !fallbackProgram) {
+          setDbg("ERROR program create: " + (fallbackErr?.message ?? createErr?.message ?? "cannot create"))
+          setIsLoadingProgram(false)
+          return
+        }
+
+        selectedProgramId = Number(fallbackProgram.id)
+      } else {
+        selectedProgramId = Number(createdProgram.id)
+      }
     }
 
     if (selectedProgramId == null) {
@@ -303,20 +332,20 @@ export default function Home() {
       return
     }
 
-    const { error: updateErr } = await supabase
-      .from("user_state")
-      .update({ program_id: selectedProgramId })
-      .eq("user_id", uid)
-
-    if (updateErr) {
-      setDbg("ERROR program assign: " + updateErr.message)
-      setIsLoadingProgram(false)
-      return
-    }
-
     setProgramId(selectedProgramId)
     setShowCustomBuilder(false)
     setTab("today")
+
+    const { error: updateErr } = await supabase
+      .from("user_state")
+      .upsert(
+        { user_id: uid, program_id: selectedProgramId, current_day: day },
+        { onConflict: "user_id" }
+      )
+
+    if (updateErr) {
+      setDbg("ERROR program assign: " + updateErr.message)
+    }
 
     await loadDay(uid, selectedProgramId, day)
     await fetchHistory(uid, selectedProgramId)
@@ -555,7 +584,9 @@ function ProgramPicker(props: {
     <div className="my-auto">
       <div className="text-center">
         <div className="mt-1 text-2xl font-semibold tracking-tight">
-          Добро пожаловать! Выбери готовую программу или создай свою
+          Добро пожаловать!
+          <br />
+          Выбери программу или создай свою
         </div>
       </div>
 
