@@ -51,34 +51,25 @@ export async function POST(req: Request) {
     let createdProgram: { id: string | number } | null = null
     let programErr: { message?: string } | null = null
 
-    const firstProgramInsert = await supabase
-      .from("programs")
-      .insert({
-        name,
-        owner_user_id: userId,
-        is_public: false,
-        days_count: 100,
-      })
-      .select("id")
-      .single()
+    const programInsertAttempts: Array<Record<string, unknown>> = [
+      { name, owner_user_id: userId, is_public: false, days_count: 100 },
+      { name, owner_user_id: userId, is_public: false },
+      { name, owner_user_id: null, is_public: false, days_count: 100 },
+      { name, owner_user_id: null, is_public: false },
+      { name, owner_user_id: userId },
+      { name },
+    ]
 
-    createdProgram = firstProgramInsert.data as { id: string | number } | null
-    programErr = firstProgramInsert.error
-
-    // Fallback for schemas where owner_user_id has incompatible type or strict FK.
-    if (programErr || !createdProgram) {
-      const fallbackProgramInsert = await supabase
-        .from("programs")
-        .insert({
-          name,
-          owner_user_id: null,
-          is_public: false,
-          days_count: 100,
-        })
-        .select("id")
-        .single()
-      createdProgram = fallbackProgramInsert.data as { id: string | number } | null
-      programErr = fallbackProgramInsert.error ?? programErr
+    for (const payload of programInsertAttempts) {
+      const attempt = await supabase.from("programs").insert(payload).select("id").single()
+      if (attempt.data?.id != null) {
+        createdProgram = { id: attempt.data.id as string | number }
+        programErr = null
+        break
+      }
+      if (attempt.error) {
+        programErr = attempt.error
+      }
     }
 
     if (programErr || !createdProgram) {

@@ -172,30 +172,19 @@ export default function Home() {
       setLoading(true)
       setIsLoadingProgram(true)
       const uid = getOrCreateUserId()
-      let { data: state, error: stateErr } = await supabase
+      const { data: state, error: stateErr } = await supabase
         .from("user_state")
         .select("user_id,program_id,current_day")
         .eq("user_id", uid)
         .single()
 
-      if (stateErr && !state) {
-        const { data: newState, error: serr } = await supabase
-          .from("user_state")
-          .upsert({ user_id: uid, program_id: null, current_day: 1 })
-          .select()
-          .single()
-
-        if (serr || !newState) {
-          setDbg("ERROR user_state: " + (serr?.message ?? stateErr.message ?? "cannot create"))
-          setLoading(false)
-          setIsLoadingProgram(false)
-          return
-        }
-        state = newState
-      }
-
       if (!state) {
-        setDbg("ERROR user_state: still null")
+        if (stateErr) {
+          setDbg("ERROR user_state: " + stateErr.message)
+        }
+        setDay(1)
+        setProgramId(null)
+        setShowProgramMenu(true)
         setLoading(false)
         setIsLoadingProgram(false)
         return
