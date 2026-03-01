@@ -332,8 +332,8 @@ export default function Home() {
       }))
       .filter((x) => x.name.length > 0)
 
-    if (!programName) return { ok: false, error: "Введите название программы" }
-    if (exList.length === 0) return { ok: false, error: "Добавьте хотя бы одно упражнение" }
+    if (!programName) return { ok: false, error: "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u043f\u0440\u043e\u0433\u0440\u0430\u043c\u043c\u044b" }
+    if (exList.length === 0) return { ok: false, error: "\u0414\u043e\u0431\u0430\u0432\u044c\u0442\u0435 \u0445\u043e\u0442\u044f \u0431\u044b \u043e\u0434\u043d\u043e \u0443\u043f\u0440\u0430\u0436\u043d\u0435\u043d\u0438\u0435" }
 
     setIsLoadingProgram(true)
     setDbg("")
@@ -354,7 +354,7 @@ export default function Home() {
         | null
 
       if (!res.ok || !body?.ok || body.programId == null) {
-        const message = body?.error ?? "Не удалось создать программу"
+        const message = body?.error ?? "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0437\u0434\u0430\u0442\u044c \u043f\u0440\u043e\u0433\u0440\u0430\u043c\u043c\u0443"
         setDbg("ERROR custom program create: " + message)
         setIsLoadingProgram(false)
         return { ok: false, error: message }
@@ -377,7 +377,7 @@ export default function Home() {
       setIsLoadingProgram(false)
       return { ok: true }
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Неизвестная ошибка"
+      const message = e instanceof Error ? e.message : "\u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0430\u044f \u043e\u0448\u0438\u0431\u043a\u0430"
       setDbg("ERROR custom program create: " + message)
       setIsLoadingProgram(false)
       return { ok: false, error: message }
@@ -524,7 +524,7 @@ export default function Home() {
   if (loading || isLoadingProgram) {
     return (
       <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center">
-        <div className="text-sm text-neutral-400">РњРёРЅСѓС‚РєСѓвЂ¦</div>
+        <div className="text-sm text-neutral-400">{"\u041c\u0438\u043d\u0443\u0442\u043a\u0443..."}</div>
       </div>
     )
   }
@@ -535,6 +535,11 @@ export default function Home() {
       <div className="pointer-events-none fixed inset-x-0 top-0 h-64 bg-gradient-to-b from-indigo-500/10 via-fuchsia-500/5 to-transparent" />
 
       <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-6 pb-24">
+        {dbg.startsWith("ERROR") ? (
+          <div className="mb-3 rounded-2xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+            {dbg}
+          </div>
+        ) : null}
         {showProgramMenu || programId == null ? (
           showCustomBuilder ? (
             <CustomProgramBuilder onBack={() => setShowCustomBuilder(false)} onCreate={createCustomProgram} />

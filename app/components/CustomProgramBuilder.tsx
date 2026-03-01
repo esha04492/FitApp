@@ -130,7 +130,7 @@ export default function CustomProgramBuilder(props: {
             Назад
           </button>
           {loading ? <div className="text-xs text-neutral-400">Создание...</div> : null}
-          {error ? <div className="text-xs text-red-200">{error}</div> : null}
+          {error ? <div className="text-xs text-red-200 break-words">{error}</div> : null}
         </div>
       </div>
     </div>
