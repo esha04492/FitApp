@@ -11,7 +11,20 @@ import { clamp, computeStreaks, localISODate } from "./lib/date"
 const PROGRAM_NAME = "100 days v.2"
 
 function getOrCreateUserId() {
+  const telegramUserId = (() => {
+    if (typeof window === "undefined") return null
+    const tg = (window as typeof window & { Telegram?: { WebApp?: { initDataUnsafe?: { user?: { id?: number } } } } }).Telegram
+    const id = tg?.WebApp?.initDataUnsafe?.user?.id
+    return id != null ? String(id) : null
+  })()
+
   const key = "user_id"
+
+  if (telegramUserId) {
+    localStorage.setItem(key, telegramUserId)
+    return telegramUserId
+  }
+
   const saved = localStorage.getItem(key)
   if (saved) return saved
   const id = crypto.randomUUID()
@@ -172,16 +185,20 @@ export default function Home() {
       setLoading(true)
       setIsLoadingProgram(true)
       const uid = getOrCreateUserId()
-      const { data: state, error: stateErr } = await supabase
+      const { data: states, error: stateErr } = await supabase
         .from("user_state")
-        .select("user_id,program_id,current_day")
+        .select("user_id,program_id,current_day,updated_at")
         .eq("user_id", uid)
-        .single()
+        .order("updated_at", { ascending: false })
+        .limit(1)
+
+      if (stateErr) {
+        setDbg("ERROR user_state: " + stateErr.message)
+      }
+
+      const state = states?.[0] ?? null
 
       if (!state) {
-        if (stateErr) {
-          setDbg("ERROR user_state: " + stateErr.message)
-        }
         setDay(1)
         setProgramId(null)
         setShowProgramMenu(true)
