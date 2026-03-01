@@ -264,6 +264,7 @@ export default function Home() {
       .select("id")
       .eq("name", PROGRAM_NAME)
       .is("owner_user_id", null)
+      .order("id", { ascending: true })
       .limit(1)
       .maybeSingle()
 
@@ -282,7 +283,7 @@ export default function Home() {
           name: PROGRAM_NAME,
           owner_user_id: null,
           is_public: true,
-          days_count: 100,
+          total_days: 100,
         })
         .select("id")
         .single()
@@ -553,8 +554,9 @@ function ProgramPicker(props: {
   return (
     <div className="my-auto">
       <div className="text-center">
-        <div className="text-sm text-neutral-400">Выбор программы</div>
-        <div className="mt-1 text-3xl font-semibold tracking-tight">Старт</div>
+        <div className="mt-1 text-2xl font-semibold tracking-tight">
+          Добро пожаловать! Выбери готовую программу или создай свою
+        </div>
       </div>
 
       <div className="mt-6 space-y-3">
