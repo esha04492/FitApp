@@ -1,5 +1,5 @@
 "use client"
-import { useState, type Dispatch, type SetStateAction } from "react"
+import { useMemo, useState, type Dispatch, type SetStateAction } from "react"
 import ActionBtn from "./ActionBtn"
 import { clamp } from "../lib/date"
 import type { Exercise } from "./types"
@@ -18,12 +18,26 @@ export default function TodayView(props: {
   allCompleted: boolean
   dayTotals: { pct: number }
   pretty: (n: number) => string
+  editExercise: (payload: {
+    exerciseId: string
+    originalName: string
+    name: string
+    target: number
+    applyTo: "today" | "program"
+  }) => Promise<{ ok: boolean; error?: string }>
 }) {
   const [showSkip, setShowSkip] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(() => {
     if (typeof window === "undefined") return false
     return localStorage.getItem("onboarding_dismissed") !== "1"
   })
+  const [editExerciseId, setEditExerciseId] = useState<string | null>(null)
+  const [editName, setEditName] = useState("")
+  const [editTarget, setEditTarget] = useState("1")
+  const [editApplyTo, setEditApplyTo] = useState<"today" | "program">("today")
+  const [editError, setEditError] = useState<string | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
+
   const {
     day,
     currentStreak,
@@ -38,24 +52,74 @@ export default function TodayView(props: {
     allCompleted,
     dayTotals,
     pretty,
+    editExercise,
   } = props
+
+  const selectedExercise = useMemo(
+    () => exercises.find((x) => x.id === editExerciseId) ?? null,
+    [editExerciseId, exercises]
+  )
 
   const dismissOnboarding = () => {
     localStorage.setItem("onboarding_dismissed", "1")
     setShowOnboarding(false)
   }
 
+  const openEdit = (exercise: Exercise) => {
+    setEditExerciseId(exercise.id)
+    setEditName(exercise.name)
+    setEditTarget(String(exercise.target_reps))
+    setEditApplyTo("today")
+    setEditError(null)
+  }
+
+  const closeEdit = () => {
+    if (savingEdit) return
+    setEditExerciseId(null)
+    setEditError(null)
+  }
+
+  const saveEdit = async () => {
+    if (!selectedExercise || savingEdit) return
+    const name = editName.trim()
+    const target = Math.max(1, Number(editTarget) || 0)
+    if (!name) {
+      setEditError("Name is required")
+      return
+    }
+
+    setSavingEdit(true)
+    setEditError(null)
+
+    const result = await editExercise({
+      exerciseId: selectedExercise.id,
+      originalName: selectedExercise.name,
+      name,
+      target,
+      applyTo: editApplyTo,
+    })
+
+    if (!result.ok) {
+      setEditError(result.error ?? "Update failed")
+      setSavingEdit(false)
+      return
+    }
+
+    setSavingEdit(false)
+    setEditExerciseId(null)
+  }
+
   return (
     <>
       <div className="mb-7 text-center">
-        <div className="text-sm text-neutral-400">Тренировка</div>
+        <div className="text-sm text-neutral-400">Р СћРЎР‚Р ВµР Р…Р С‘РЎР‚Р С•Р Р†Р С”Р В°</div>
         <div className="mt-1 flex items-center justify-center gap-2">
-          <div className="text-3xl font-semibold tracking-tight">{"День "}{day}</div>
+          <div className="text-3xl font-semibold tracking-tight">{"Р вЂќР ВµР Р…РЎРЉ "}{day}</div>
           {currentStreak > 0 ? (
             <span className="animate-pulse rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs text-amber-300">
-              {"🔥 Дней подряд "}
+              {"СЂСџвЂќТђ Р вЂќР Р…Р ВµР в„– Р С—Р С•Р Т‘РЎР‚РЎРЏР Т‘ "}
               <span className="font-bold">{currentStreak}</span>
-              {" 🔥"}
+              {" СЂСџвЂќТђ"}
             </span>
           ) : null}
         </div>
@@ -63,11 +127,11 @@ export default function TodayView(props: {
         <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur">
           <div className="flex items-end justify-between gap-3">
             <div className="text-left">
-              <div className="text-xs text-neutral-400">Прогресс дня</div>
+              <div className="text-xs text-neutral-400">Р СџРЎР‚Р С•Р С–РЎР‚Р ВµРЎРѓРЎРѓ Р Т‘Р Р…РЎРЏ</div>
               <div className="mt-1 text-3xl font-semibold tabular-nums">{dayTotals.pct}%</div>
             </div>
 
-            <div className="text-right text-xs text-neutral-500">{allCompleted ? "День закрыт ✅" : "До закрытия дня"}</div>
+            <div className="text-right text-xs text-neutral-500">{allCompleted ? "Р вЂќР ВµР Р…РЎРЉ Р В·Р В°Р С”РЎР‚РЎвЂ№РЎвЂљ РІСљвЂ¦" : "Р вЂќР С• Р В·Р В°Р С”РЎР‚РЎвЂ№РЎвЂљР С‘РЎРЏ Р Т‘Р Р…РЎРЏ"}</div>
           </div>
 
           <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
@@ -84,14 +148,14 @@ export default function TodayView(props: {
           <button
             onClick={dismissOnboarding}
             className="absolute right-3 top-3 h-7 w-7 rounded-full border border-white/10 bg-white/5 text-xs text-neutral-300 transition hover:bg-white/10 hover:text-neutral-100"
-            aria-label="Закрыть онбординг"
+            aria-label="Р вЂ”Р В°Р С”РЎР‚РЎвЂ№РЎвЂљРЎРЉ Р С•Р Р…Р В±Р С•РЎР‚Р Т‘Р С‘Р Р…Р С–"
           >
             X
           </button>
           <div className="pr-10 text-center">
-            <div className="text-sm font-semibold text-neutral-100">FitStreak — 100 дней дисциплины</div>
+            <div className="text-sm font-semibold text-neutral-100">FitStreak РІР‚вЂќ 100 Р Т‘Р Р…Р ВµР в„– Р Т‘Р С‘РЎРѓРЎвЂ Р С‘Р С—Р В»Р С‘Р Р…РЎвЂ№</div>
             <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-neutral-300">
-              {"Это приложение для 100-дневного челленджа. Каждый день отмечай выполнение упражнений, следи за серией (streak) и старайся не прерывать её.\nМожно пропустить день, но серия обнулится.\nЖми «Следующий день», когда закроешь все упражнения. Погнали 💪"}
+              {"Р В­РЎвЂљР С• Р С—РЎР‚Р С‘Р В»Р С•Р В¶Р ВµР Р…Р С‘Р Вµ Р Т‘Р В»РЎРЏ 100-Р Т‘Р Р…Р ВµР Р†Р Р…Р С•Р С–Р С• РЎвЂЎР ВµР В»Р В»Р ВµР Р…Р Т‘Р В¶Р В°. Р С™Р В°Р В¶Р Т‘РЎвЂ№Р в„– Р Т‘Р ВµР Р…РЎРЉ Р С•РЎвЂљР СР ВµРЎвЂЎР В°Р в„– Р Р†РЎвЂ№Р С—Р С•Р В»Р Р…Р ВµР Р…Р С‘Р Вµ РЎС“Р С—РЎР‚Р В°Р В¶Р Р…Р ВµР Р…Р С‘Р в„–, РЎРѓР В»Р ВµР Т‘Р С‘ Р В·Р В° РЎРѓР ВµРЎР‚Р С‘Р ВµР в„– (streak) Р С‘ РЎРѓРЎвЂљР В°РЎР‚Р В°Р в„–РЎРѓРЎРЏ Р Р…Р Вµ Р С—РЎР‚Р ВµРЎР‚РЎвЂ№Р Р†Р В°РЎвЂљРЎРЉ Р ВµРЎвЂ.\nР СљР С•Р В¶Р Р…Р С• Р С—РЎР‚Р С•Р С—РЎС“РЎРѓРЎвЂљР С‘РЎвЂљРЎРЉ Р Т‘Р ВµР Р…РЎРЉ, Р Р…Р С• РЎРѓР ВµРЎР‚Р С‘РЎРЏ Р С•Р В±Р Р…РЎС“Р В»Р С‘РЎвЂљРЎРѓРЎРЏ.\nР вЂ“Р СР С‘ Р’В«Р РЋР В»Р ВµР Т‘РЎС“РЎР‹РЎвЂ°Р С‘Р в„– Р Т‘Р ВµР Р…РЎРЉР’В», Р С”Р С•Р С–Р Т‘Р В° Р В·Р В°Р С”РЎР‚Р С•Р ВµРЎв‚¬РЎРЉ Р Р†РЎРѓР Вµ РЎС“Р С—РЎР‚Р В°Р В¶Р Р…Р ВµР Р…Р С‘РЎРЏ. Р СџР С•Р С–Р Р…Р В°Р В»Р С‘ СЂСџвЂ™Р„"}
             </p>
           </div>
         </div>
@@ -103,7 +167,7 @@ export default function TodayView(props: {
           const isCompleted = reps >= ex.target_reps
           const percent = clamp(Math.round((reps / ex.target_reps) * 100), 0, 100)
           const remaining = Math.max(ex.target_reps - reps, 0)
-          const isSteps = ex.name.toLowerCase() === "шаги"
+          const isSteps = ex.name.toLowerCase() === "РЎв‚¬Р В°Р С–Р С‘"
 
           return (
             <div
@@ -114,19 +178,29 @@ export default function TodayView(props: {
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-sm text-neutral-400">Упражнение</div>
+                  <div className="text-sm text-neutral-400">Р Р€Р С—РЎР‚Р В°Р В¶Р Р…Р ВµР Р…Р С‘Р Вµ</div>
                   <div className="mt-0.5 text-lg font-semibold">{ex.name}</div>
                 </div>
 
-                {isCompleted ? (
-                  <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200">
-                    Выполнено
-                  </span>
-                ) : (
-                  <span className="whitespace-nowrap rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-neutral-300">
-                    Осталось {pretty(remaining)}
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(ex)}
+                    className="h-8 rounded-xl border border-white/10 bg-white/5 px-2 text-xs text-neutral-200 transition hover:bg-white/10"
+                    aria-label="Edit exercise"
+                  >
+                    ✎
+                  </button>
+                  {isCompleted ? (
+                    <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200">
+                      Р вЂ™РЎвЂ№Р С—Р С•Р В»Р Р…Р ВµР Р…Р С•
+                    </span>
+                  ) : (
+                    <span className="whitespace-nowrap rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-neutral-300">
+                      Р С›РЎРѓРЎвЂљР В°Р В»Р С•РЎРѓРЎРЉ {pretty(remaining)}
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="mt-4 flex items-end justify-between gap-3">
@@ -186,7 +260,7 @@ export default function TodayView(props: {
                 <input
                   inputMode="numeric"
                   type="number"
-                  placeholder="Свое число"
+                  placeholder="Р РЋР Р†Р С•Р Вµ РЎвЂЎР С‘РЎРѓР В»Р С•"
                   value={customInput[ex.id] || ""}
                   onChange={(e) =>
                     setCustomInput((prev) => ({
@@ -201,7 +275,7 @@ export default function TodayView(props: {
                   onClick={() => addCustomReps(ex.id, ex.target_reps)}
                   className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 shadow-sm transition active:scale-[0.99] hover:bg-white/10"
                 >
-                  Добавить
+                  Р вЂќР С•Р В±Р В°Р Р†Р С‘РЎвЂљРЎРЉ
                 </button>
               </div>
             </div>
@@ -219,13 +293,13 @@ export default function TodayView(props: {
               : "bg-white/5 text-neutral-500 border border-white/10 cursor-not-allowed"
           }`}
         >
-          Следующий день
+          Р РЋР В»Р ВµР Т‘РЎС“РЎР‹РЎвЂ°Р С‘Р в„– Р Т‘Р ВµР Р…РЎРЉ
         </button>
         <button
           onClick={() => setShowSkip(true)}
           className="mt-3 text-xs text-neutral-500 hover:text-neutral-300 transition"
         >
-          {"Пропустить день"}
+          {"Р СџРЎР‚Р С•Р С—РЎС“РЎРѓРЎвЂљР С‘РЎвЂљРЎРЉ Р Т‘Р ВµР Р…РЎРЉ"}
         </button>
       </div>
 
@@ -233,14 +307,14 @@ export default function TodayView(props: {
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
           <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-neutral-900 px-5 py-4 shadow-2xl">
             <div className="text-base font-semibold text-neutral-100">
-              {"Ты уверен, что хочешь пропустить день?"}
+              {"Р СћРЎвЂ№ РЎС“Р Р†Р ВµРЎР‚Р ВµР Р…, РЎвЂЎРЎвЂљР С• РЎвЂ¦Р С•РЎвЂЎР ВµРЎв‚¬РЎРЉ Р С—РЎР‚Р С•Р С—РЎС“РЎРѓРЎвЂљР С‘РЎвЂљРЎРЉ Р Т‘Р ВµР Р…РЎРЉ?"}
             </div>
             <div className="mt-4 flex items-center justify-end gap-2">
               <button
                 onClick={() => setShowSkip(false)}
                 className="h-11 flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition active:scale-[0.99] hover:bg-white/10"
               >
-                {"Нет"}
+                {"Р СњР ВµРЎвЂљ"}
               </button>
               <button
                 onClick={async () => {
@@ -249,7 +323,71 @@ export default function TodayView(props: {
                 }}
                 className="h-9 rounded-xl border border-red-400/30 bg-red-500/15 px-3 text-xs font-semibold text-red-200 transition active:scale-[0.99] hover:bg-red-500/25"
               >
-                {"Да"}
+                {"Р вЂќР В°"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedExercise ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
+          <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-neutral-900 p-4 shadow-2xl">
+            <div className="text-sm font-semibold text-neutral-100">Edit exercise</div>
+            <div className="mt-3 space-y-2">
+              <input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-100 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
+              />
+              <input
+                type="number"
+                inputMode="numeric"
+                value={editTarget}
+                onChange={(e) => setEditTarget(e.target.value)}
+                className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-100 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
+              />
+            </div>
+
+            <div className="mt-4">
+              <div className="text-xs text-neutral-400">Apply changes to:</div>
+              <label className="mt-2 flex items-center gap-2 text-sm text-neutral-200">
+                <input
+                  type="radio"
+                  name="applyTo"
+                  checked={editApplyTo === "today"}
+                  onChange={() => setEditApplyTo("today")}
+                />
+                <span>Today only</span>
+              </label>
+              <label className="mt-1 flex items-center gap-2 text-sm text-neutral-200">
+                <input
+                  type="radio"
+                  name="applyTo"
+                  checked={editApplyTo === "program"}
+                  onChange={() => setEditApplyTo("program")}
+                />
+                <span>Whole program</span>
+              </label>
+            </div>
+
+            {editError ? <div className="mt-3 text-xs text-red-200 break-words">{editError}</div> : null}
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeEdit}
+                className="h-10 rounded-xl border border-white/10 bg-white/5 px-4 text-sm text-neutral-100 transition hover:bg-white/10"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={savingEdit}
+                onClick={saveEdit}
+                className="h-10 rounded-xl border border-emerald-400/20 bg-emerald-500/15 px-4 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:opacity-60"
+              >
+                Save
               </button>
             </div>
           </div>

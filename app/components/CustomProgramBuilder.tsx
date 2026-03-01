@@ -33,7 +33,16 @@ export default function CustomProgramBuilder(props: {
   }
 
   const removeExercise = (index: number) => {
+    if (exercises.length <= 1) return
     setExercises((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const duplicateExercise = (index: number) => {
+    setExercises((prev) => {
+      const item = prev[index]
+      if (!item) return prev
+      return [...prev.slice(0, index + 1), { ...item }, ...prev.slice(index + 1)]
+    })
   }
 
   const submit = async () => {
@@ -45,7 +54,7 @@ export default function CustomProgramBuilder(props: {
       exercises: exercises.map((ex) => ({ ...ex, name: ex.name.trim() })),
     })
     if (!result.ok) {
-      setError(result.error ?? "Не удалось создать программу")
+      setError(result.error ?? "Р СњР Вµ РЎС“Р Т‘Р В°Р В»Р С•РЎРѓРЎРЉ РЎРѓР С•Р В·Р Т‘Р В°РЎвЂљРЎРЉ Р С—РЎР‚Р С•Р С–РЎР‚Р В°Р СР СРЎС“")
     }
     setLoading(false)
   }
@@ -53,9 +62,9 @@ export default function CustomProgramBuilder(props: {
   return (
     <div className="my-auto space-y-4">
       <div className="rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur">
-        <div className="text-sm font-semibold text-neutral-100">Создать свою</div>
+        <div className="text-sm font-semibold text-neutral-100">Р РЋР С•Р В·Р Т‘Р В°РЎвЂљРЎРЉ РЎРѓР Р†Р С•РЎР‹</div>
         <div className="mt-3">
-          <div className="text-xs text-neutral-400">Название программы</div>
+          <div className="text-xs text-neutral-400">Р СњР В°Р В·Р Р†Р В°Р Р…Р С‘Р Вµ Р С—РЎР‚Р С•Р С–РЎР‚Р В°Р СР СРЎвЂ№</div>
           <input
             value={programName}
             onChange={(e) => setProgramName(e.target.value)}
@@ -68,10 +77,27 @@ export default function CustomProgramBuilder(props: {
         {exercises.map((ex, index) => (
           <div key={index} className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
             <div className="grid grid-cols-1 gap-2">
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={exercises.length <= 1}
+                  onClick={() => removeExercise(index)}
+                  className="h-8 rounded-xl border border-red-400/30 bg-red-500/15 px-2 text-[11px] font-semibold text-red-200 transition hover:bg-red-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  onClick={() => duplicateExercise(index)}
+                  className="h-8 rounded-xl border border-white/10 bg-white/5 px-2 text-[11px] font-semibold text-neutral-100 transition hover:bg-white/10"
+                >
+                  Duplicate
+                </button>
+              </div>
               <input
                 value={ex.name}
                 onChange={(e) => updateExercise(index, { name: e.target.value })}
-                placeholder="Упражнение"
+                placeholder="Р Р€Р С—РЎР‚Р В°Р В¶Р Р…Р ВµР Р…Р С‘Р Вµ"
                 className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-100 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
               />
               <div className="grid grid-cols-2 gap-2">
@@ -91,14 +117,6 @@ export default function CustomProgramBuilder(props: {
                   <option value="steps">steps</option>
                 </select>
               </div>
-              {index > 0 ? (
-                <button
-                  onClick={() => removeExercise(index)}
-                  className="h-10 rounded-2xl border border-red-400/20 bg-red-500/10 px-3 text-xs font-semibold text-red-200 transition active:scale-[0.99] hover:bg-red-500/15"
-                >
-                  Удалить упражнение
-                </button>
-              ) : null}
             </div>
           </div>
         ))}
@@ -110,9 +128,10 @@ export default function CustomProgramBuilder(props: {
             onClick={addExercise}
             className="h-11 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition active:scale-[0.99] hover:bg-white/10"
           >
-            Добавить упражнение
+            Р вЂќР С•Р В±Р В°Р Р†Р С‘РЎвЂљРЎРЉ РЎС“Р С—РЎР‚Р В°Р В¶Р Р…Р ВµР Р…Р С‘Р Вµ
           </button>
           <button
+            type="button"
             disabled={!canCreate || loading}
             onClick={submit}
             className={`h-11 rounded-2xl px-4 text-sm font-semibold transition active:scale-[0.99] ${
@@ -121,15 +140,15 @@ export default function CustomProgramBuilder(props: {
                 : "border border-white/10 bg-white/5 text-neutral-500"
             }`}
           >
-            Создать программу
+            Р РЋР С•Р В·Р Т‘Р В°РЎвЂљРЎРЉ Р С—РЎР‚Р С•Р С–РЎР‚Р В°Р СР СРЎС“
           </button>
           <button
             onClick={onBack}
             className="h-11 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition active:scale-[0.99] hover:bg-white/10"
           >
-            Назад
+            Р СњР В°Р В·Р В°Р Т‘
           </button>
-          {loading ? <div className="text-xs text-neutral-400">Создание...</div> : null}
+          {loading ? <div className="text-xs text-neutral-400">Р РЋР С•Р В·Р Т‘Р В°Р Р…Р С‘Р Вµ...</div> : null}
           {error ? <div className="text-xs text-red-200 break-words">{error}</div> : null}
         </div>
       </div>

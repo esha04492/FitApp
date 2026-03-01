@@ -10,26 +10,67 @@ import TabBar from "./components/TabBar"
 import { clamp, computeStreaks, localISODate } from "./lib/date"
 const PROGRAM_NAME = "100 days v.2"
 
-function getOrCreateUserId() {
-  const telegramUserId = (() => {
-    if (typeof window === "undefined") return null
-    const tg = (window as typeof window & { Telegram?: { WebApp?: { initDataUnsafe?: { user?: { id?: number } } } } }).Telegram
-    const id = tg?.WebApp?.initDataUnsafe?.user?.id
-    return id != null ? String(id) : null
-  })()
+type TgWindow = Window & {
+  Telegram?: {
+    WebApp?: {
+      initData?: string
+      initDataUnsafe?: { user?: { id?: number | string } }
+    }
+  }
+}
 
+function readTelegramUserId(): string | null {
+  if (typeof window === "undefined") return null
+  const tg = (window as TgWindow).Telegram
+  const directId = tg?.WebApp?.initDataUnsafe?.user?.id
+  if (directId != null) return String(directId)
+
+  const initData = tg?.WebApp?.initData
+  if (!initData) return null
+
+  try {
+    const params = new URLSearchParams(initData)
+    const rawUser = params.get("user")
+    if (!rawUser) return null
+    const parsed = JSON.parse(rawUser) as { id?: number | string }
+    if (parsed.id == null) return null
+    return String(parsed.id)
+  } catch {
+    return null
+  }
+}
+
+async function getOrCreateUserId() {
+  const identity = await getUserIdentity()
+  return identity.id
+}
+
+async function getUserIdentity(): Promise<{ id: string; source: "telegram" | "local" }> {
   const key = "user_id"
+  const inTelegram = typeof window !== "undefined" && Boolean((window as TgWindow).Telegram?.WebApp)
 
-  if (telegramUserId) {
-    localStorage.setItem(key, telegramUserId)
-    return telegramUserId
+  for (let i = 0; i < 20; i += 1) {
+    const telegramUserId = readTelegramUserId()
+    if (telegramUserId) {
+      localStorage.setItem(key, telegramUserId)
+      return { id: telegramUserId, source: "telegram" }
+    }
+    if (!inTelegram) break
+    await new Promise((resolve) => setTimeout(resolve, 75))
+  }
+
+  if (inTelegram) {
+    // Do not reuse a previous local user id inside Telegram if user.id was not resolved.
+    const fresh = crypto.randomUUID()
+    localStorage.setItem(key, fresh)
+    return { id: fresh, source: "local" }
   }
 
   const saved = localStorage.getItem(key)
-  if (saved) return saved
+  if (saved) return { id: saved, source: "local" }
   const id = crypto.randomUUID()
   localStorage.setItem(key, id)
-  return id
+  return { id, source: "local" }
 }
 
 export default function Home() {
@@ -49,6 +90,7 @@ export default function Home() {
 
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [historyByExercise, setHistoryByExercise] = useState<Record<string, number>>({})
+  const [identityDebug, setIdentityDebug] = useState<string>("")
 
   useEffect(() => {
     const savedTab = localStorage.getItem("tab")
@@ -184,7 +226,10 @@ export default function Home() {
     const init = async () => {
       setLoading(true)
       setIsLoadingProgram(true)
-      const uid = getOrCreateUserId()
+      const identity = await getUserIdentity()
+      const uid = identity.id
+      const debugEnabled = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "1"
+      setIdentityDebug(debugEnabled ? `uid: ${uid} (source: ${identity.source})` : "")
       const { data: states, error: stateErr } = await supabase
         .from("user_state")
         .select("user_id,program_id,current_day,updated_at")
@@ -234,7 +279,7 @@ export default function Home() {
   }, [])
 
   const chooseBuiltInProgram = async () => {
-    const uid = getOrCreateUserId()
+    const uid = await getOrCreateUserId()
     setIsLoadingProgram(true)
 
     let selectedProgramId: string | number | null = null
@@ -328,7 +373,7 @@ export default function Home() {
     name: string
     exercises: Array<{ name: string; target: number; unit: "reps" | "steps" }>
   }) => {
-    const uid = getOrCreateUserId()
+    const uid = await getOrCreateUserId()
     const programName = payload.name.trim()
     const exList = payload.exercises
       .map((x) => ({
@@ -408,7 +453,7 @@ export default function Home() {
   }, [exercises, progress])
 
   const updateReps = async (id: string, change: number, target: number) => {
-    const uid = getOrCreateUserId()
+    const uid = await getOrCreateUserId()
 
     const current = progress[id] || 0
     const updated = Math.max(0, current + change)
@@ -431,9 +476,70 @@ export default function Home() {
     setCustomInput((prev) => ({ ...prev, [id]: "" }))
   }
 
+  const editExercise = async (payload: {
+    exerciseId: string
+    originalName: string
+    name: string
+    target: number
+    applyTo: "today" | "program"
+  }): Promise<{ ok: boolean; error?: string }> => {
+    if (programId == null) return { ok: false, error: "Program is not selected" }
+    const trimmedName = payload.name.trim()
+    const safeTarget = Math.max(1, Number(payload.target) || 0)
+    if (!trimmedName) return { ok: false, error: "Name is required" }
+
+    try {
+      if (payload.applyTo === "today") {
+        const { error: err1 } = await supabase
+          .from("day_exercises")
+          .update({ name: trimmedName, target_reps: safeTarget })
+          .eq("id", payload.exerciseId)
+        if (err1) {
+          const { error: err2 } = await supabase
+            .from("day_exercises")
+            .update({ name: trimmedName, target: safeTarget })
+            .eq("id", payload.exerciseId)
+          if (err2) {
+            return { ok: false, error: err2.message ?? err1.message ?? "Update failed" }
+          }
+        }
+      } else {
+        const { data: dayRows, error: daysErr } = await supabase
+          .from("program_days")
+          .select("id")
+          .eq("program_id", programId)
+        if (daysErr) return { ok: false, error: daysErr.message }
+        const dayIds = dayRows?.map((x) => x.id) ?? []
+        if (dayIds.length === 0) return { ok: false, error: "Program days not found" }
+
+        const { error: err1 } = await supabase
+          .from("day_exercises")
+          .update({ name: trimmedName, target_reps: safeTarget })
+          .in("program_day_id", dayIds)
+          .eq("name", payload.originalName)
+        if (err1) {
+          const { error: err2 } = await supabase
+            .from("day_exercises")
+            .update({ name: trimmedName, target: safeTarget })
+            .in("program_day_id", dayIds)
+            .eq("name", payload.originalName)
+          if (err2) {
+            return { ok: false, error: err2.message ?? err1.message ?? "Update failed" }
+          }
+        }
+      }
+
+      const uid = await getOrCreateUserId()
+      await loadDay(uid, programId, day)
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Unknown error" }
+    }
+  }
+
   const nextDay = async (force = false) => {
     if (!allCompleted && !force) return
-    const uid = getOrCreateUserId()
+    const uid = await getOrCreateUserId()
     if (programId == null) return
 
     const entryDate = localISODate()
@@ -541,6 +647,7 @@ export default function Home() {
       <div className="pointer-events-none fixed inset-x-0 top-0 h-64 bg-gradient-to-b from-indigo-500/10 via-fuchsia-500/5 to-transparent" />
 
       <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-6 pb-24">
+        {identityDebug ? <div className="mb-2 text-[11px] text-neutral-500">{identityDebug}</div> : null}
         {dbg.startsWith("ERROR") ? (
           <div className="mb-3 rounded-2xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
             {dbg}
@@ -571,6 +678,7 @@ export default function Home() {
             dayTotals={dayTotals}
             currentStreak={stats.streak}
             pretty={pretty}
+            editExercise={editExercise}
           />
         ) : (
           <StatsView
@@ -581,7 +689,7 @@ export default function Home() {
             stats={stats}
             historyByExercise={historyByExercise}
             onReset={async () => {
-              const uid = getOrCreateUserId()
+              const uid = await getOrCreateUserId()
               if (programId == null) return
 
               await supabase.from("user_exercise_progress").delete().eq("user_id", uid)
