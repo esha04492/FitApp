@@ -71,7 +71,7 @@ export default function Home() {
   const [tab, setTab] = useState<"today" | "stats">("today")
 
   const [loading, setLoading] = useState(true)
-  const [programId, setProgramId] = useState<number | null>(null)
+  const [programId, setProgramId] = useState<string | number | null>(null)
   const [isLoadingProgram, setIsLoadingProgram] = useState(true)
   const [showCustomBuilder, setShowCustomBuilder] = useState(false)
 
@@ -94,7 +94,7 @@ export default function Home() {
 
   const pretty = (n: number) => n.toLocaleString("ru-RU")
 
-  const fetchHistory = async (uid: string, pid: number) => {
+  const fetchHistory = async (uid: string, pid: string | number) => {
     const { data, error } = await supabase
       .from("user_day_history")
       .select("day_number, local_date, total_done, total_target")
@@ -119,7 +119,7 @@ export default function Home() {
     setHistory(mapped)
   }
 
-  const fetchHistoryBreakdown = async (uid: string, pid: number) => {
+  const fetchHistoryBreakdown = async (uid: string, pid: string | number) => {
     const { data, error } = await supabase
       .from("user_day_history_exercises")
       .select("exercise_name,reps_done")
@@ -139,7 +139,7 @@ export default function Home() {
     setHistoryByExercise(map)
   }
 
-  const loadDay = async (uid: string, pid: number, dayNumber: number) => {
+  const loadDay = async (uid: string, pid: string | number, dayNumber: number) => {
     const { data: pd, error: pderr } = await supabase
       .from("program_days")
       .select("id, day_number")
@@ -231,8 +231,7 @@ export default function Home() {
       }
 
       const currentDay = state.current_day ?? 1
-      const selectedProgramId =
-        state.program_id == null ? null : Number(state.program_id)
+      const selectedProgramId = state.program_id as string | number | null
 
       setDay(currentDay)
       setProgramId(selectedProgramId)
@@ -260,65 +259,51 @@ export default function Home() {
     const uid = getOrCreateUserId()
     setIsLoadingProgram(true)
 
-    let selectedProgramId: number | null = null
+    let selectedProgramId: string | number | null = null
+    const startDay = 1
 
-    const { data: existingPrograms, error: existingErr } = await supabase
+    const { data: existingBuiltIn, error: existingBuiltInErr } = await supabase
       .from("programs")
       .select("id")
       .eq("name", PROGRAM_NAME)
+      .is("owner_user_id", null)
       .order("id", { ascending: true })
       .limit(1)
 
-    if (!existingErr) {
-      const first = existingPrograms?.[0]
-      if (first?.id != null) selectedProgramId = Number(first.id)
-    } else {
-      setDbg("ERROR program select: " + existingErr.message)
+    if (!existingBuiltInErr) {
+      const first = existingBuiltIn?.[0]
+      if (first?.id != null) selectedProgramId = first.id
+    }
+
+    // Fallback: если owner_user_id в старых данных заполнен, берём любую программу по имени.
+    if (selectedProgramId == null) {
+      const { data: anyByName, error: anyByNameErr } = await supabase
+        .from("programs")
+        .select("id")
+        .eq("name", PROGRAM_NAME)
+        .order("id", { ascending: true })
+        .limit(1)
+
+      if (!anyByNameErr) {
+        const first = anyByName?.[0]
+        if (first?.id != null) selectedProgramId = first.id
+      }
     }
 
     if (selectedProgramId == null) {
-      const { data: createdProgram, error: createErr } = await supabase
-        .from("programs")
-        .insert({
-          name: PROGRAM_NAME,
-          owner_user_id: null,
-          is_public: true,
-          total_days: 100,
-        })
-        .select("id")
-        .single()
-
-      if (!createErr && createdProgram?.id != null) {
-        selectedProgramId = Number(createdProgram.id)
-      } else {
-        const { data: fallbackProgram, error: fallbackErr } = await supabase
-          .from("programs")
-          .insert({
-            name: PROGRAM_NAME,
-            owner_user_id: null,
-            is_public: true,
-            days_count: 100,
-          })
-          .select("id")
-          .single()
-
-        if (!fallbackErr && fallbackProgram?.id != null) {
-          selectedProgramId = Number(fallbackProgram.id)
-        } else {
-          setDbg("ERROR program create: " + (fallbackErr?.message ?? createErr?.message ?? "cannot create"))
-          setIsLoadingProgram(false)
-          return
-        }
-      }
+      setDbg("ERROR program select: built-in program not found")
+      setIsLoadingProgram(false)
+      return
     }
 
     setProgramId(selectedProgramId)
     setShowCustomBuilder(false)
     setTab("today")
+    setDay(startDay)
 
     const { data: updatedRows, error: updateErr } = await supabase
       .from("user_state")
-      .update({ program_id: selectedProgramId })
+      .update({ program_id: selectedProgramId, current_day: startDay })
       .eq("user_id", uid)
       .select("user_id")
       .limit(1)
@@ -328,7 +313,7 @@ export default function Home() {
     } else if (!updatedRows || updatedRows.length === 0) {
       const { error: insertStateErr } = await supabase
         .from("user_state")
-        .insert({ user_id: uid, program_id: selectedProgramId, current_day: day })
+        .insert({ user_id: uid, program_id: selectedProgramId, current_day: startDay })
       if (insertStateErr) {
         setDbg("ERROR user_state create: " + insertStateErr.message)
       }
@@ -339,7 +324,7 @@ export default function Home() {
       return
     }
 
-    await loadDay(uid, selectedProgramId, day)
+    await loadDay(uid, selectedProgramId, startDay)
     await fetchHistory(uid, selectedProgramId)
     await fetchHistoryBreakdown(uid, selectedProgramId)
 
