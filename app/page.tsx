@@ -313,6 +313,7 @@ export default function Home() {
       local_date: entryDate,
       total_done: totalDone,
       total_target: totalTarget,
+      skipped: force,
     })
 
     if (herr) {

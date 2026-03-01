@@ -38,28 +38,50 @@ export async function GET(req: Request) {
     if (!supabase) {
       return NextResponse.json({
         ok: false,
-        totalUsers: 0,
+        totalTgUsers: 0,
         reminded: 0,
         today,
         errors: ["Supabase env is missing"],
       })
     }
 
-    const { data: stateRows, error: stateErr } = await supabase.from("user_state").select("user_id")
-    if (stateErr) {
+    const { data: tgRows, error: tgErr } = await supabase
+      .from("telegram_users")
+      .select("user_id, chat_id")
+
+    if (tgErr) {
       return NextResponse.json({
         ok: false,
-        totalUsers: 0,
+        totalTgUsers: 0,
         reminded: 0,
         today,
-        errors: [`user_state read error: ${stateErr.message}`],
+        errors: [`telegram_users read error: ${tgErr.message}`],
       })
     }
 
-    const userIds = [...new Set((stateRows ?? []).map((r) => String(r.user_id)).filter(Boolean))]
+    const recipients = (tgRows ?? [])
+      .map((r) => ({
+        userId: r.user_id ? String(r.user_id) : "",
+        chatId: r.chat_id ? String(r.chat_id) : "",
+      }))
+      .filter((r) => r.userId && r.chatId)
+
+    if (recipients.length === 0) {
+      return NextResponse.json({
+        ok: true,
+        totalTgUsers: 0,
+        reminded: 0,
+        today,
+        note: "telegram_users is empty. Users need to press Start in Telegram bot.",
+        errors,
+      })
+    }
 
     let reminded = 0
-    for (const userId of userIds) {
+
+    for (const recipient of recipients) {
+      const { userId, chatId } = recipient
+
       const { data: closedRows, error: closedErr } = await supabase
         .from("user_day_history")
         .select("user_id")
@@ -82,13 +104,13 @@ export async function GET(req: Request) {
       }
 
       const payload = {
-        chat_id: userId,
-        text: "⏰ Ты ещё не отметил тренировку сегодня. Жми «Открыть приложение» 💪",
+        chat_id: chatId,
+        text: "\u23f0 \u0422\u044b \u0435\u0449\u0451 \u043d\u0435 \u043e\u0442\u043c\u0435\u0442\u0438\u043b \u0442\u0440\u0435\u043d\u0438\u0440\u043e\u0432\u043a\u0443 \u0441\u0435\u0433\u043e\u0434\u043d\u044f. \u0416\u043c\u0438 \u00ab\u041e\u0442\u043a\u0440\u044b\u0442\u044c \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435\u00bb \ud83d\udcaa",
         reply_markup: {
           inline_keyboard: [
             [
               {
-                text: "🚀 Открыть приложение",
+                text: "\ud83d\ude80 \u041e\u0442\u043a\u0440\u044b\u0442\u044c \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435",
                 web_app: { url: WEBAPP_URL },
               },
             ],
@@ -117,7 +139,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      totalUsers: userIds.length,
+      totalTgUsers: recipients.length,
       reminded,
       today,
       errors,
@@ -125,11 +147,10 @@ export async function GET(req: Request) {
   } catch (e: any) {
     return NextResponse.json({
       ok: false,
-      totalUsers: 0,
+      totalTgUsers: 0,
       reminded: 0,
       today,
       errors: [...errors, e?.message ?? "unknown"],
     })
   }
 }
-

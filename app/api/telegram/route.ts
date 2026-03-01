@@ -1,12 +1,21 @@
 import { NextResponse } from "next/server"
+import { createClient } from "@supabase/supabase-js"
 
 export const runtime = "nodejs" // важно для fetch + crypto в node runtime
 
 const BOT_TOKEN = process.env.BOT_TOKEN
 const WEBAPP_URL = process.env.WEBAPP_URL
+const SUPABASE_URL = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
+const SUPABASE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 function apiUrl(method: string) {
   return `https://api.telegram.org/bot${BOT_TOKEN}/${method}`
+}
+
+function getSupabase() {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return null
+  return createClient(SUPABASE_URL, SUPABASE_KEY)
 }
 
 export async function POST(req: Request) {
@@ -25,6 +34,30 @@ export async function POST(req: Request) {
 
     // реагируем на /start
     if (chatId && text.startsWith("/start")) {
+      const tgUserId = message.from?.id ? String(message.from.id) : null
+      const username = message.from?.username ?? null
+      const firstName = message.from?.first_name ?? null
+      const lastName = message.from?.last_name ?? null
+
+      if (tgUserId) {
+        const supabase = getSupabase()
+        if (!supabase) {
+          console.error("telegram /start upsert skipped: supabase env missing")
+        } else {
+          const { error: upsertErr } = await supabase.from("telegram_users").upsert({
+            user_id: tgUserId,
+            chat_id: chatId,
+            username: username,
+            first_name: firstName,
+            last_name: lastName,
+            updated_at: new Date().toISOString(),
+          })
+          if (upsertErr) {
+            console.error("telegram /start upsert error:", upsertErr.message)
+          }
+        }
+      }
+
       const payload = {
         chat_id: chatId,
         text:
