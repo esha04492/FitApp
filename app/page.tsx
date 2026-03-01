@@ -339,81 +339,28 @@ export default function Home() {
     setDbg("")
 
     try {
-      const { data: createdProgram, error: programErr } = await supabase
-        .from("programs")
-        .insert({
+      const res = await fetch("/api/programs/create", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          userId: uid,
           name: programName,
-          owner_user_id: uid,
-          is_public: false,
-          days_count: 100,
-        })
-        .select("id")
-        .single()
+          exercises: exList,
+        }),
+      })
 
-      if (programErr || !createdProgram) {
+      const body = (await res.json().catch(() => null)) as
+        | { ok?: boolean; error?: string; programId?: string | number }
+        | null
+
+      if (!res.ok || !body?.ok || body.programId == null) {
+        const message = body?.error ?? "Не удалось создать программу"
+        setDbg("ERROR custom program create: " + message)
         setIsLoadingProgram(false)
-        return { ok: false, error: programErr?.message ?? "Не удалось создать программу" }
+        return { ok: false, error: message }
       }
 
-      const programIdNew = createdProgram.id as string | number
-      const dayRows = Array.from({ length: 100 }, (_, i) => ({
-        program_id: programIdNew,
-        day_number: i + 1,
-      }))
-
-      const { data: insertedDays, error: daysErr } = await supabase
-        .from("program_days")
-        .insert(dayRows)
-        .select("id,day_number")
-
-      if (daysErr || !insertedDays || insertedDays.length === 0) {
-        setIsLoadingProgram(false)
-        return { ok: false, error: daysErr?.message ?? "Не удалось создать дни программы" }
-      }
-
-      const sortedDays = [...insertedDays].sort((a, b) => a.day_number - b.day_number)
-      const exerciseRows = sortedDays.flatMap((d) =>
-        exList.map((ex, index) => ({
-          program_day_id: d.id,
-          name: ex.name,
-          target_reps: ex.target,
-          sort_order: index + 1,
-        }))
-      )
-
-      const { error: exerciseErr1 } = await supabase.from("day_exercises").insert(exerciseRows)
-      if (exerciseErr1) {
-        const fallbackRows = sortedDays.flatMap((d) =>
-          exList.map((ex, index) => ({
-            program_day_id: d.id,
-            name: ex.name,
-            target: ex.target,
-            unit: ex.unit,
-            weight: null,
-            sort_order: index + 1,
-          }))
-        )
-        const { error: exerciseErr2 } = await supabase.from("day_exercises").insert(fallbackRows)
-        if (exerciseErr2) {
-          setIsLoadingProgram(false)
-          return { ok: false, error: exerciseErr2.message ?? exerciseErr1.message ?? "Не удалось создать упражнения" }
-        }
-      }
-
-      const { error: stateErr } = await supabase.from("user_state").upsert(
-        {
-          user_id: uid,
-          program_id: programIdNew,
-          current_day: 1,
-        },
-        { onConflict: "user_id" }
-      )
-
-      if (stateErr) {
-        setIsLoadingProgram(false)
-        return { ok: false, error: stateErr.message ?? "Не удалось обновить состояние пользователя" }
-      }
-
+      const programIdNew = body.programId
       setProgramId(programIdNew)
       setShowProgramMenu(false)
       setShowCustomBuilder(false)
@@ -431,6 +378,7 @@ export default function Home() {
       return { ok: true }
     } catch (e) {
       const message = e instanceof Error ? e.message : "Неизвестная ошибка"
+      setDbg("ERROR custom program create: " + message)
       setIsLoadingProgram(false)
       return { ok: false, error: message }
     }
@@ -576,7 +524,7 @@ export default function Home() {
   if (loading || isLoadingProgram) {
     return (
       <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center">
-        <div className="text-sm text-neutral-400">Минутку…</div>
+        <div className="text-sm text-neutral-400">РњРёРЅСѓС‚РєСѓвЂ¦</div>
       </div>
     )
   }
