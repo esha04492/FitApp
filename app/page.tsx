@@ -311,8 +311,8 @@ export default function Home() {
     setCustomInput((prev) => ({ ...prev, [id]: "" }))
   }
 
-  const nextDay = async () => {
-    if (!allCompleted) return
+  const nextDay = async (force = false) => {
+    if (!allCompleted && !force) return
     const uid = getOrCreateUserId()
     if (!programId) return
 
@@ -429,7 +429,8 @@ export default function Home() {
             setCustomInput={setCustomInput}
             updateReps={updateReps}
             addCustomReps={addCustomReps}
-            nextDay={nextDay}
+            nextDay={() => nextDay()}
+            skipDay={() => nextDay(true)}
             allCompleted={allCompleted}
             dayTotals={dayTotals}
             pretty={pretty}
@@ -483,10 +484,12 @@ function TodayView(props: {
   updateReps: (id: string, change: number, target: number) => Promise<void>
   addCustomReps: (id: string, target: number) => Promise<void>
   nextDay: () => Promise<void>
+  skipDay: () => Promise<void>
   allCompleted: boolean
   dayTotals: { pct: number }
   pretty: (n: number) => string
 }) {
+  const [showSkip, setShowSkip] = useState(false)
   const {
     day,
     exercises,
@@ -496,6 +499,7 @@ function TodayView(props: {
     updateReps,
     addCustomReps,
     nextDay,
+    skipDay,
     allCompleted,
     dayTotals,
     pretty,
@@ -658,7 +662,40 @@ function TodayView(props: {
         >
           Следующий день
         </button>
+        <button
+          onClick={() => setShowSkip(true)}
+          className="mt-3 text-xs text-neutral-500 hover:text-neutral-300 transition"
+        >
+          {"\u041f\u0440\u043e\u043f\u0443\u0441\u0442\u0438\u0442\u044c \u0434\u0435\u043d\u044c"}
+        </button>
       </div>
+
+      {showSkip ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
+          <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-neutral-900 px-5 py-4 shadow-2xl">
+            <div className="text-base font-semibold text-neutral-100">
+              {"\u0422\u044b \u0443\u0432\u0435\u0440\u0435\u043d, \u0447\u0442\u043e \u0445\u043e\u0447\u0435\u0448\u044c \u043f\u0440\u043e\u043f\u0443\u0441\u0442\u0438\u0442\u044c \u0434\u0435\u043d\u044c?"}
+            </div>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setShowSkip(false)}
+                className="h-11 flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition active:scale-[0.99] hover:bg-white/10"
+              >
+                {"\u041d\u0435\u0442"}
+              </button>
+              <button
+                onClick={async () => {
+                  setShowSkip(false)
+                  await skipDay()
+                }}
+                className="h-9 rounded-xl border border-red-400/30 bg-red-500/15 px-3 text-xs font-semibold text-red-200 transition active:scale-[0.99] hover:bg-red-500/25"
+              >
+                {"\u0414\u0430"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   )
 }
