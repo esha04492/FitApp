@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 import { useMemo, useState } from "react"
 
 type BuilderExercise = {
@@ -54,7 +54,7 @@ export default function CustomProgramBuilder(props: {
       exercises: exercises.map((ex) => ({ ...ex, name: ex.name.trim() })),
     })
     if (!result.ok) {
-      setError(result.error ?? "Р СњР Вµ РЎС“Р Т‘Р В°Р В»Р С•РЎРѓРЎРЉ РЎРѓР С•Р В·Р Т‘Р В°РЎвЂљРЎРЉ Р С—РЎР‚Р С•Р С–РЎР‚Р В°Р СР СРЎС“")
+      setError(result.error ?? "Could not create program")
     }
     setLoading(false)
   }
@@ -62,9 +62,9 @@ export default function CustomProgramBuilder(props: {
   return (
     <div className="my-auto space-y-4">
       <div className="rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur">
-        <div className="text-sm font-semibold text-neutral-100">Р РЋР С•Р В·Р Т‘Р В°РЎвЂљРЎРЉ РЎРѓР Р†Р С•РЎР‹</div>
+        <div className="text-sm font-semibold text-neutral-100">Create your plan</div>
         <div className="mt-3">
-          <div className="text-xs text-neutral-400">Р СњР В°Р В·Р Р†Р В°Р Р…Р С‘Р Вµ Р С—РЎР‚Р С•Р С–РЎР‚Р В°Р СР СРЎвЂ№</div>
+          <div className="text-xs text-neutral-400">Program name</div>
           <input
             value={programName}
             onChange={(e) => setProgramName(e.target.value)}
@@ -97,7 +97,7 @@ export default function CustomProgramBuilder(props: {
               <input
                 value={ex.name}
                 onChange={(e) => updateExercise(index, { name: e.target.value })}
-                placeholder="Р Р€Р С—РЎР‚Р В°Р В¶Р Р…Р ВµР Р…Р С‘Р Вµ"
+                placeholder="Exercise"
                 className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-100 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
               />
               <div className="grid grid-cols-2 gap-2">
@@ -125,10 +125,11 @@ export default function CustomProgramBuilder(props: {
       <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
         <div className="grid grid-cols-1 gap-2">
           <button
+            type="button"
             onClick={addExercise}
             className="h-11 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition active:scale-[0.99] hover:bg-white/10"
           >
-            Р вЂќР С•Р В±Р В°Р Р†Р С‘РЎвЂљРЎРЉ РЎС“Р С—РЎР‚Р В°Р В¶Р Р…Р ВµР Р…Р С‘Р Вµ
+            Add exercise
           </button>
           <button
             type="button"
@@ -140,15 +141,16 @@ export default function CustomProgramBuilder(props: {
                 : "border border-white/10 bg-white/5 text-neutral-500"
             }`}
           >
-            Р РЋР С•Р В·Р Т‘Р В°РЎвЂљРЎРЉ Р С—РЎР‚Р С•Р С–РЎР‚Р В°Р СР СРЎС“
+            Create program
           </button>
           <button
+            type="button"
             onClick={onBack}
             className="h-11 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition active:scale-[0.99] hover:bg-white/10"
           >
-            Р СњР В°Р В·Р В°Р Т‘
+            Back
           </button>
-          {loading ? <div className="text-xs text-neutral-400">Р РЋР С•Р В·Р Т‘Р В°Р Р…Р С‘Р Вµ...</div> : null}
+          {loading ? <div className="text-xs text-neutral-400">Creating...</div> : null}
           {error ? <div className="text-xs text-red-200 break-words">{error}</div> : null}
         </div>
       </div>

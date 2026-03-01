@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server"
+﻿import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
 export const runtime = "nodejs"
@@ -105,12 +105,12 @@ export async function GET(req: Request) {
 
       const payload = {
         chat_id: chatId,
-        text: "⏰ Ты ещё не отметил тренировку сегодня. Жми «Открыть приложение» 💪",
+        text: "You have not completed your workout today yet. Tap Open app.",
         reply_markup: {
           inline_keyboard: [
             [
               {
-                text: "🚀 Открыть приложение",
+                text: "Open app",
                 web_app: { url: WEBAPP_URL },
               },
             ],
@@ -132,8 +132,9 @@ export async function GET(req: Request) {
         }
 
         reminded += 1
-      } catch (e: any) {
-        errors.push(`telegram fetch failed for ${userId}: ${e?.message ?? "unknown"}`)
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : "unknown"
+        errors.push(`telegram fetch failed for ${userId}: ${message}`)
       }
     }
 
@@ -144,13 +145,14 @@ export async function GET(req: Request) {
       today,
       errors,
     })
-  } catch (e: any) {
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "unknown"
     return NextResponse.json({
       ok: false,
       totalTgUsers: 0,
       reminded: 0,
       today,
-      errors: [...errors, e?.message ?? "unknown"],
+      errors: [...errors, message],
     })
   }
 }

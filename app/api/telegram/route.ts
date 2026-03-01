@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server"
+﻿import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
-export const runtime = "nodejs" // важно для fetch + crypto в node runtime
+export const runtime = "nodejs" // required for fetch + crypto in node runtime
 
 const BOT_TOKEN = process.env.BOT_TOKEN
 const WEBAPP_URL = process.env.WEBAPP_URL
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     const chatId = message.chat?.id
     const text: string = message.text || ""
 
-    // реагируем на /start
+    // handle /start
     if (chatId && text.startsWith("/start")) {
       const tgUserId = message.from?.id ? String(message.from.id) : null
       const username = message.from?.username ?? null
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
           const { error: upsertErr } = await supabase.from("telegram_users").upsert({
             user_id: tgUserId,
             chat_id: chatId,
-            username: username,
+            username,
             first_name: firstName,
             last_name: lastName,
             updated_at: new Date().toISOString(),
@@ -61,14 +61,14 @@ export async function POST(req: Request) {
       const payload = {
         chat_id: chatId,
         text:
-          "🔥 Добро пожаловать в FitStreak!\n\n" +
-          "Сможешь продержаться 100 дней подряд?\n\n" +
-          "Жми кнопку ниже и начинай сегодня 💪",
+          "Welcome to FitStreak!\n\n" +
+          "Can you keep your streak for 100 days?\n\n" +
+          "Tap the button below and start today.",
         reply_markup: {
           inline_keyboard: [
             [
               {
-                text: "🚀 Открыть приложение",
+                text: "Open app",
                 web_app: { url: WEBAPP_URL },
               },
             ],
@@ -84,11 +84,12 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ ok: true })
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? "unknown" }, { status: 200 })
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "unknown"
+    return NextResponse.json({ ok: false, error: message }, { status: 200 })
   }
-  
 }
+
 export async function GET() {
   return Response.json({ ok: true, hint: "Telegram webhook endpoint. Send POST updates here." })
 }

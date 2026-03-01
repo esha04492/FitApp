@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 import type { ReactNode } from "react"
 
 export default function TabBar({
@@ -12,10 +12,10 @@ export default function TabBar({
     <div className="fixed inset-x-0 bottom-0 border-t border-white/10 bg-neutral-950/70 backdrop-blur">
       <div className="mx-auto grid max-w-md grid-cols-2 gap-2 px-5 py-3">
         <TabBtn active={tab === "today"} onClick={() => setTab("today")}>
-          Сегодня
+          Today
         </TabBtn>
         <TabBtn active={tab === "stats"} onClick={() => setTab("stats")}>
-          Статистика
+          Stats
         </TabBtn>
       </div>
     </div>
@@ -33,6 +33,7 @@ function TabBtn({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={`h-11 rounded-2xl px-4 text-sm font-semibold transition active:scale-[0.99] ${
         active

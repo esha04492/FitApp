@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 import { useMemo, useState, type Dispatch, type SetStateAction } from "react"
 import ActionBtn from "./ActionBtn"
 import { clamp } from "../lib/date"
@@ -112,14 +112,12 @@ export default function TodayView(props: {
   return (
     <>
       <div className="mb-7 text-center">
-        <div className="text-sm text-neutral-400">Р СћРЎР‚Р ВµР Р…Р С‘РЎР‚Р С•Р Р†Р С”Р В°</div>
+        <div className="text-sm text-neutral-400">Workout</div>
         <div className="mt-1 flex items-center justify-center gap-2">
-          <div className="text-3xl font-semibold tracking-tight">{"Р вЂќР ВµР Р…РЎРЉ "}{day}</div>
+          <div className="text-3xl font-semibold tracking-tight">Day {day}</div>
           {currentStreak > 0 ? (
             <span className="animate-pulse rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs text-amber-300">
-              {"СЂСџвЂќТђ Р вЂќР Р…Р ВµР в„– Р С—Р С•Р Т‘РЎР‚РЎРЏР Т‘ "}
-              <span className="font-bold">{currentStreak}</span>
-              {" СЂСџвЂќТђ"}
+              Fire Streak <span className="font-bold">{currentStreak}</span> Fire
             </span>
           ) : null}
         </div>
@@ -127,11 +125,11 @@ export default function TodayView(props: {
         <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur">
           <div className="flex items-end justify-between gap-3">
             <div className="text-left">
-              <div className="text-xs text-neutral-400">Р СџРЎР‚Р С•Р С–РЎР‚Р ВµРЎРѓРЎРѓ Р Т‘Р Р…РЎРЏ</div>
+              <div className="text-xs text-neutral-400">Day progress</div>
               <div className="mt-1 text-3xl font-semibold tabular-nums">{dayTotals.pct}%</div>
             </div>
 
-            <div className="text-right text-xs text-neutral-500">{allCompleted ? "Р вЂќР ВµР Р…РЎРЉ Р В·Р В°Р С”РЎР‚РЎвЂ№РЎвЂљ РІСљвЂ¦" : "Р вЂќР С• Р В·Р В°Р С”РЎР‚РЎвЂ№РЎвЂљР С‘РЎРЏ Р Т‘Р Р…РЎРЏ"}</div>
+            <div className="text-right text-xs text-neutral-500">{allCompleted ? "Day complete" : "Finish all exercises"}</div>
           </div>
 
           <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
@@ -146,16 +144,17 @@ export default function TodayView(props: {
       {showOnboarding ? (
         <div className="relative mb-4 rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
           <button
+            type="button"
             onClick={dismissOnboarding}
             className="absolute right-3 top-3 h-7 w-7 rounded-full border border-white/10 bg-white/5 text-xs text-neutral-300 transition hover:bg-white/10 hover:text-neutral-100"
-            aria-label="Р вЂ”Р В°Р С”РЎР‚РЎвЂ№РЎвЂљРЎРЉ Р С•Р Р…Р В±Р С•РЎР‚Р Т‘Р С‘Р Р…Р С–"
+            aria-label="Close onboarding"
           >
             X
           </button>
           <div className="pr-10 text-center">
-            <div className="text-sm font-semibold text-neutral-100">FitStreak РІР‚вЂќ 100 Р Т‘Р Р…Р ВµР в„– Р Т‘Р С‘РЎРѓРЎвЂ Р С‘Р С—Р В»Р С‘Р Р…РЎвЂ№</div>
+            <div className="text-sm font-semibold text-neutral-100">FitStreak - 100 days of discipline</div>
             <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-neutral-300">
-              {"Р В­РЎвЂљР С• Р С—РЎР‚Р С‘Р В»Р С•Р В¶Р ВµР Р…Р С‘Р Вµ Р Т‘Р В»РЎРЏ 100-Р Т‘Р Р…Р ВµР Р†Р Р…Р С•Р С–Р С• РЎвЂЎР ВµР В»Р В»Р ВµР Р…Р Т‘Р В¶Р В°. Р С™Р В°Р В¶Р Т‘РЎвЂ№Р в„– Р Т‘Р ВµР Р…РЎРЉ Р С•РЎвЂљР СР ВµРЎвЂЎР В°Р в„– Р Р†РЎвЂ№Р С—Р С•Р В»Р Р…Р ВµР Р…Р С‘Р Вµ РЎС“Р С—РЎР‚Р В°Р В¶Р Р…Р ВµР Р…Р С‘Р в„–, РЎРѓР В»Р ВµР Т‘Р С‘ Р В·Р В° РЎРѓР ВµРЎР‚Р С‘Р ВµР в„– (streak) Р С‘ РЎРѓРЎвЂљР В°РЎР‚Р В°Р в„–РЎРѓРЎРЏ Р Р…Р Вµ Р С—РЎР‚Р ВµРЎР‚РЎвЂ№Р Р†Р В°РЎвЂљРЎРЉ Р ВµРЎвЂ.\nР СљР С•Р В¶Р Р…Р С• Р С—РЎР‚Р С•Р С—РЎС“РЎРѓРЎвЂљР С‘РЎвЂљРЎРЉ Р Т‘Р ВµР Р…РЎРЉ, Р Р…Р С• РЎРѓР ВµРЎР‚Р С‘РЎРЏ Р С•Р В±Р Р…РЎС“Р В»Р С‘РЎвЂљРЎРѓРЎРЏ.\nР вЂ“Р СР С‘ Р’В«Р РЋР В»Р ВµР Т‘РЎС“РЎР‹РЎвЂ°Р С‘Р в„– Р Т‘Р ВµР Р…РЎРЉР’В», Р С”Р С•Р С–Р Т‘Р В° Р В·Р В°Р С”РЎР‚Р С•Р ВµРЎв‚¬РЎРЉ Р Р†РЎРѓР Вµ РЎС“Р С—РЎР‚Р В°Р В¶Р Р…Р ВµР Р…Р С‘РЎРЏ. Р СџР С•Р С–Р Р…Р В°Р В»Р С‘ СЂСџвЂ™Р„"}
+              {"This app is a 100-day challenge tracker. Mark your exercises daily, build your streak, and stay consistent.\nYou can skip a day, but your streak will reset.\nTap Next day when all exercises are done. Let us go."}
             </p>
           </div>
         </div>
@@ -167,7 +166,7 @@ export default function TodayView(props: {
           const isCompleted = reps >= ex.target_reps
           const percent = clamp(Math.round((reps / ex.target_reps) * 100), 0, 100)
           const remaining = Math.max(ex.target_reps - reps, 0)
-          const isSteps = ex.name.toLowerCase() === "РЎв‚¬Р В°Р С–Р С‘"
+          const isSteps = ex.target_reps >= 1000 || /step/i.test(ex.name)
 
           return (
             <div
@@ -178,7 +177,7 @@ export default function TodayView(props: {
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-sm text-neutral-400">Р Р€Р С—РЎР‚Р В°Р В¶Р Р…Р ВµР Р…Р С‘Р Вµ</div>
+                  <div className="text-sm text-neutral-400">Exercise</div>
                   <div className="mt-0.5 text-lg font-semibold">{ex.name}</div>
                 </div>
 
@@ -189,15 +188,15 @@ export default function TodayView(props: {
                     className="h-8 rounded-xl border border-white/10 bg-white/5 px-2 text-xs text-neutral-200 transition hover:bg-white/10"
                     aria-label="Edit exercise"
                   >
-                    ✎
+                    Edit
                   </button>
                   {isCompleted ? (
                     <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200">
-                      Р вЂ™РЎвЂ№Р С—Р С•Р В»Р Р…Р ВµР Р…Р С•
+                      Completed
                     </span>
                   ) : (
                     <span className="whitespace-nowrap rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-neutral-300">
-                      Р С›РЎРѓРЎвЂљР В°Р В»Р С•РЎРѓРЎРЉ {pretty(remaining)}
+                      Left {pretty(remaining)}
                     </span>
                   )}
                 </div>
@@ -260,7 +259,7 @@ export default function TodayView(props: {
                 <input
                   inputMode="numeric"
                   type="number"
-                  placeholder="Р РЋР Р†Р С•Р Вµ РЎвЂЎР С‘РЎРѓР В»Р С•"
+                  placeholder="Any number"
                   value={customInput[ex.id] || ""}
                   onChange={(e) =>
                     setCustomInput((prev) => ({
@@ -272,10 +271,11 @@ export default function TodayView(props: {
                 />
 
                 <button
+                  type="button"
                   onClick={() => addCustomReps(ex.id, ex.target_reps)}
                   className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 shadow-sm transition active:scale-[0.99] hover:bg-white/10"
                 >
-                  Р вЂќР С•Р В±Р В°Р Р†Р С‘РЎвЂљРЎРЉ
+                  Add
                 </button>
               </div>
             </div>
@@ -285,6 +285,7 @@ export default function TodayView(props: {
 
       <div className="mt-6">
         <button
+          type="button"
           disabled={!allCompleted}
           onClick={nextDay}
           className={`h-12 w-full rounded-2xl px-4 text-sm font-semibold shadow-sm transition active:scale-[0.99] ${
@@ -293,37 +294,38 @@ export default function TodayView(props: {
               : "bg-white/5 text-neutral-500 border border-white/10 cursor-not-allowed"
           }`}
         >
-          Р РЋР В»Р ВµР Т‘РЎС“РЎР‹РЎвЂ°Р С‘Р в„– Р Т‘Р ВµР Р…РЎРЉ
+          Next day
         </button>
         <button
+          type="button"
           onClick={() => setShowSkip(true)}
           className="mt-3 text-xs text-neutral-500 hover:text-neutral-300 transition"
         >
-          {"Р СџРЎР‚Р С•Р С—РЎС“РЎРѓРЎвЂљР С‘РЎвЂљРЎРЉ Р Т‘Р ВµР Р…РЎРЉ"}
+          Skip day
         </button>
       </div>
 
       {showSkip ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
           <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-neutral-900 px-5 py-4 shadow-2xl">
-            <div className="text-base font-semibold text-neutral-100">
-              {"Р СћРЎвЂ№ РЎС“Р Р†Р ВµРЎР‚Р ВµР Р…, РЎвЂЎРЎвЂљР С• РЎвЂ¦Р С•РЎвЂЎР ВµРЎв‚¬РЎРЉ Р С—РЎР‚Р С•Р С—РЎС“РЎРѓРЎвЂљР С‘РЎвЂљРЎРЉ Р Т‘Р ВµР Р…РЎРЉ?"}
-            </div>
+            <div className="text-base font-semibold text-neutral-100">Are you sure you want to skip this day?</div>
             <div className="mt-4 flex items-center justify-end gap-2">
               <button
+                type="button"
                 onClick={() => setShowSkip(false)}
                 className="h-11 flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition active:scale-[0.99] hover:bg-white/10"
               >
-                {"Р СњР ВµРЎвЂљ"}
+                No
               </button>
               <button
+                type="button"
                 onClick={async () => {
                   setShowSkip(false)
                   await skipDay()
                 }}
                 className="h-9 rounded-xl border border-red-400/30 bg-red-500/15 px-3 text-xs font-semibold text-red-200 transition active:scale-[0.99] hover:bg-red-500/25"
               >
-                {"Р вЂќР В°"}
+                Yes
               </button>
             </div>
           </div>

@@ -101,7 +101,7 @@ export default function Home() {
     localStorage.setItem("tab", tab)
   }, [tab])
 
-  const pretty = (n: number) => n.toLocaleString("ru-RU")
+  const pretty = (n: number) => n.toLocaleString("en-US")
 
   const fetchHistory = async (uid: string, pid: string | number) => {
     const { data, error } = await supabase
@@ -383,8 +383,8 @@ export default function Home() {
       }))
       .filter((x) => x.name.length > 0)
 
-    if (!programName) return { ok: false, error: "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u043f\u0440\u043e\u0433\u0440\u0430\u043c\u043c\u044b" }
-    if (exList.length === 0) return { ok: false, error: "\u0414\u043e\u0431\u0430\u0432\u044c\u0442\u0435 \u0445\u043e\u0442\u044f \u0431\u044b \u043e\u0434\u043d\u043e \u0443\u043f\u0440\u0430\u0436\u043d\u0435\u043d\u0438\u0435" }
+    if (!programName) return { ok: false, error: "Enter program name" }
+    if (exList.length === 0) return { ok: false, error: "Add at least one exercise" }
 
     setIsLoadingProgram(true)
     setDbg("")
@@ -405,7 +405,7 @@ export default function Home() {
         | null
 
       if (!res.ok || !body?.ok || body.programId == null) {
-        const message = body?.error ?? "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0437\u0434\u0430\u0442\u044c \u043f\u0440\u043e\u0433\u0440\u0430\u043c\u043c\u0443"
+        const message = body?.error ?? "Could not create program"
         setDbg("ERROR custom program create: " + message)
         setIsLoadingProgram(false)
         return { ok: false, error: message }
@@ -428,7 +428,7 @@ export default function Home() {
       setIsLoadingProgram(false)
       return { ok: true }
     } catch (e) {
-      const message = e instanceof Error ? e.message : "\u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0430\u044f \u043e\u0448\u0438\u0431\u043a\u0430"
+      const message = e instanceof Error ? e.message : "Unknown error"
       setDbg("ERROR custom program create: " + message)
       setIsLoadingProgram(false)
       return { ok: false, error: message }
@@ -620,8 +620,8 @@ export default function Home() {
 
   const totalsSplit = useMemo(() => {
     const entries = Object.entries(historyByExercise)
-    const steps = entries.reduce((s, [name, v]) => s + (name.toLowerCase() === "\u0448\u0430\u0433\u0438" ? v : 0), 0)
-    const others = entries.reduce((s, [name, v]) => s + (name.toLowerCase() === "\u0448\u0430\u0433\u0438" ? 0 : v), 0)
+    const steps = entries.reduce((s, [name, v]) => s + (/step/i.test(name) ? v : 0), 0)
+    const others = entries.reduce((s, [name, v]) => s + (/step/i.test(name) ? 0 : v), 0)
     return { steps, others }
   }, [historyByExercise])
 
@@ -636,7 +636,7 @@ export default function Home() {
   if (loading || isLoadingProgram) {
     return (
       <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center">
-        <div className="text-sm text-neutral-400">{"\u041c\u0438\u043d\u0443\u0442\u043a\u0443..."}</div>
+        <div className="text-sm text-neutral-400">Loading...</div>
       </div>
     )
   }
