@@ -260,37 +260,23 @@ export default function Home() {
     const uid = getOrCreateUserId()
     setIsLoadingProgram(true)
 
-    const { data: existingProgram, error: existingErr } = await supabase
+    let selectedProgramId: number | null = null
+
+    const { data: existingPrograms, error: existingErr } = await supabase
       .from("programs")
       .select("id")
       .eq("name", PROGRAM_NAME)
-      .is("owner_user_id", null)
       .order("id", { ascending: true })
       .limit(1)
-      .maybeSingle()
 
-    if (existingErr) {
+    if (!existingErr) {
+      const first = existingPrograms?.[0]
+      if (first?.id != null) selectedProgramId = Number(first.id)
+    } else {
       setDbg("ERROR program select: " + existingErr.message)
-      setIsLoadingProgram(false)
-      return
     }
 
-    let selectedProgramId =
-      existingProgram?.id == null ? undefined : Number(existingProgram.id)
-
-    if (!selectedProgramId) {
-      const { data: anyProgram } = await supabase
-        .from("programs")
-        .select("id")
-        .eq("name", PROGRAM_NAME)
-        .order("id", { ascending: true })
-        .limit(1)
-        .maybeSingle()
-
-      selectedProgramId = anyProgram?.id == null ? undefined : Number(anyProgram.id)
-    }
-
-    if (!selectedProgramId) {
+    if (selectedProgramId == null) {
       const { data: createdProgram, error: createErr } = await supabase
         .from("programs")
         .insert({
@@ -302,7 +288,9 @@ export default function Home() {
         .select("id")
         .single()
 
-      if (createErr || !createdProgram) {
+      if (!createErr && createdProgram?.id != null) {
+        selectedProgramId = Number(createdProgram.id)
+      } else {
         const { data: fallbackProgram, error: fallbackErr } = await supabase
           .from("programs")
           .insert({
@@ -314,37 +302,41 @@ export default function Home() {
           .select("id")
           .single()
 
-        if (fallbackErr || !fallbackProgram) {
+        if (!fallbackErr && fallbackProgram?.id != null) {
+          selectedProgramId = Number(fallbackProgram.id)
+        } else {
           setDbg("ERROR program create: " + (fallbackErr?.message ?? createErr?.message ?? "cannot create"))
           setIsLoadingProgram(false)
           return
         }
-
-        selectedProgramId = Number(fallbackProgram.id)
-      } else {
-        selectedProgramId = Number(createdProgram.id)
       }
-    }
-
-    if (selectedProgramId == null) {
-      setDbg("ERROR program id: missing")
-      setIsLoadingProgram(false)
-      return
     }
 
     setProgramId(selectedProgramId)
     setShowCustomBuilder(false)
     setTab("today")
 
-    const { error: updateErr } = await supabase
+    const { data: updatedRows, error: updateErr } = await supabase
       .from("user_state")
-      .upsert(
-        { user_id: uid, program_id: selectedProgramId, current_day: day },
-        { onConflict: "user_id" }
-      )
+      .update({ program_id: selectedProgramId })
+      .eq("user_id", uid)
+      .select("user_id")
+      .limit(1)
 
     if (updateErr) {
       setDbg("ERROR program assign: " + updateErr.message)
+    } else if (!updatedRows || updatedRows.length === 0) {
+      const { error: insertStateErr } = await supabase
+        .from("user_state")
+        .insert({ user_id: uid, program_id: selectedProgramId, current_day: day })
+      if (insertStateErr) {
+        setDbg("ERROR user_state create: " + insertStateErr.message)
+      }
+    }
+
+    if (selectedProgramId == null) {
+      setIsLoadingProgram(false)
+      return
     }
 
     await loadDay(uid, selectedProgramId, day)
