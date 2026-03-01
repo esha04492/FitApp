@@ -41,10 +41,10 @@ export default function StatsView(props: {
         <div className="mt-1 text-3xl font-semibold tracking-tight">Сводка</div>
 
         <div className="mt-4 grid grid-cols-2 gap-3">
-<StatCard label="Дней завершено" value={String(stats.totalDays)} />
-<StatCard label="Шагов всего" value={totalsSplit.steps.toLocaleString("ru-RU")} />
-<StatCard label="Повторений всего" value={totalsSplit.others.toLocaleString("ru-RU")} />
-<StatCard label="Streak" value={String(stats.streak)} />
+          <StatCard label="Дней завершено" value={String(stats.totalDays)} />
+          <StatCard label="Шагов всего" value={totalsSplit.steps.toLocaleString("ru-RU")} />
+          <StatCard label="Повторений всего" value={totalsSplit.others.toLocaleString("ru-RU")} />
+          <StatCard label="Streak" value={String(stats.streak)} />
         </div>
 
         <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur text-left">
@@ -114,7 +114,6 @@ export default function StatsView(props: {
           </div>
         </div>
 
-        {/* Reset (password protected) */}
         <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
           <div className="text-sm font-semibold">Сброс</div>
           <div className="mt-1 text-xs text-neutral-400">Защита от случайного нажатия. Пароль: 0000</div>
@@ -155,4 +154,3 @@ export default function StatsView(props: {
     </>
   )
 }
-

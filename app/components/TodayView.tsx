@@ -47,7 +47,6 @@ export default function TodayView(props: {
 
   return (
     <>
-      {/* Header */}
       <div className="mb-7 text-center">
         <div className="text-sm text-neutral-400">Тренировка</div>
         <div className="mt-1 flex items-center justify-center gap-2">
@@ -61,7 +60,6 @@ export default function TodayView(props: {
           ) : null}
         </div>
 
-        {/* Day summary */}
         <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur">
           <div className="flex items-end justify-between gap-3">
             <div className="text-left">
@@ -99,7 +97,6 @@ export default function TodayView(props: {
         </div>
       ) : null}
 
-      {/* Exercises */}
       <div className="space-y-4">
         {exercises.map((ex) => {
           const reps = progress[ex.id] || 0
@@ -127,12 +124,11 @@ export default function TodayView(props: {
                   </span>
                 ) : (
                   <span className="whitespace-nowrap rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-neutral-300">
-  Осталось {pretty(remaining)}
-</span>
+                    Осталось {pretty(remaining)}
+                  </span>
                 )}
               </div>
 
-              {/* Big reps */}
               <div className="mt-4 flex items-end justify-between gap-3">
                 <div className="text-4xl font-semibold tabular-nums tracking-tight">
                   {pretty(reps)}
@@ -141,7 +137,6 @@ export default function TodayView(props: {
                 <div className="text-sm text-neutral-400 tabular-nums">{percent}%</div>
               </div>
 
-              {/* Progress bar */}
               <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
                 <div
                   className={`h-full rounded-full transition-all duration-300 ${
@@ -153,15 +148,14 @@ export default function TodayView(props: {
                 />
               </div>
 
-              {/* Controls */}
               <div className="mt-4 grid grid-cols-4 gap-2">
                 {isSteps ? (
                   <>
                     <ActionBtn variant="ghost" onClick={() => updateReps(ex.id, -2000, ex.target_reps)}>
-                      −2000
+                      -2000
                     </ActionBtn>
                     <ActionBtn variant="ghost" onClick={() => updateReps(ex.id, -1000, ex.target_reps)}>
-                      −1000
+                      -1000
                     </ActionBtn>
                     <ActionBtn variant="primary" onClick={() => updateReps(ex.id, 1000, ex.target_reps)}>
                       +1000
@@ -173,10 +167,10 @@ export default function TodayView(props: {
                 ) : (
                   <>
                     <ActionBtn variant="ghost" onClick={() => updateReps(ex.id, -10, ex.target_reps)}>
-                      −10
+                      -10
                     </ActionBtn>
                     <ActionBtn variant="ghost" onClick={() => updateReps(ex.id, -5, ex.target_reps)}>
-                      −5
+                      -5
                     </ActionBtn>
                     <ActionBtn variant="primary" onClick={() => updateReps(ex.id, 5, ex.target_reps)}>
                       +5
@@ -188,7 +182,6 @@ export default function TodayView(props: {
                 )}
               </div>
 
-              {/* Custom input 50/50 */}
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <input
                   inputMode="numeric"
@@ -216,7 +209,6 @@ export default function TodayView(props: {
         })}
       </div>
 
-      {/* Next day */}
       <div className="mt-6">
         <button
           disabled={!allCompleted}
@@ -266,4 +258,3 @@ export default function TodayView(props: {
     </>
   )
 }
-

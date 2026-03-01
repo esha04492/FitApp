@@ -26,6 +26,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [programId, setProgramId] = useState<string | number | null>(null)
   const [isLoadingProgram, setIsLoadingProgram] = useState(true)
+  const [showProgramMenu, setShowProgramMenu] = useState(true)
   const [showCustomBuilder, setShowCustomBuilder] = useState(false)
 
   const [day, setDay] = useState(1)
@@ -107,20 +108,37 @@ export default function Home() {
       return
     }
 
+    let exList: Exercise[] = []
     const { data: exs, error: exerr } = await supabase
       .from("day_exercises")
       .select("id,name,target_reps,sort_order")
       .eq("program_day_id", pd.id)
       .order("sort_order")
 
-    if (exerr) {
-      setDbg("ERROR day_exercises: " + exerr.message)
-      setExercises([])
-      setProgress({})
-      return
-    }
+    if (!exerr) {
+      exList = (exs as Exercise[]) ?? []
+    } else {
+      const { data: fallbackExs, error: fallbackErr } = await supabase
+        .from("day_exercises")
+        .select("id,name,target,sort_order")
+        .eq("program_day_id", pd.id)
+        .order("sort_order")
 
-    const exList = (exs as Exercise[]) ?? []
+      if (fallbackErr) {
+        setDbg("ERROR day_exercises: " + fallbackErr.message)
+        setExercises([])
+        setProgress({})
+        return
+      }
+
+      exList =
+        fallbackExs?.map((row) => ({
+          id: row.id,
+          name: row.name,
+          target_reps: row.target,
+          sort_order: row.sort_order,
+        })) ?? []
+    }
     setExercises(exList)
 
     if (exList.length === 0) {
@@ -188,6 +206,7 @@ export default function Home() {
 
       setDay(currentDay)
       setProgramId(selectedProgramId)
+      setShowProgramMenu(selectedProgramId == null)
 
       if (selectedProgramId == null) {
         setLoading(false)
@@ -269,6 +288,7 @@ export default function Home() {
     }
 
     setProgramId(selectedProgramId)
+    setShowProgramMenu(false)
     setShowCustomBuilder(false)
     setTab("today")
     setDay(startDay)
@@ -312,8 +332,8 @@ export default function Home() {
       }))
       .filter((x) => x.name.length > 0)
 
-    if (!programName) return { ok: false, error: "Р вЂ™Р Р†Р ВµР Т‘Р С‘РЎвЂљР Вµ Р Р…Р В°Р В·Р Р†Р В°Р Р…Р С‘Р Вµ Р С—РЎР‚Р С•Р С–РЎР‚Р В°Р СР СРЎвЂ№" }
-    if (exList.length === 0) return { ok: false, error: "Р вЂќР С•Р В±Р В°Р Р†РЎРЉРЎвЂљР Вµ РЎвЂ¦Р С•РЎвЂљРЎРЏ Р В±РЎвЂ№ Р С•Р Т‘Р Р…Р С• РЎС“Р С—РЎР‚Р В°Р В¶Р Р…Р ВµР Р…Р С‘Р Вµ" }
+    if (!programName) return { ok: false, error: "Введите название программы" }
+    if (exList.length === 0) return { ok: false, error: "Добавьте хотя бы одно упражнение" }
 
     setIsLoadingProgram(true)
     setDbg("")
@@ -332,7 +352,7 @@ export default function Home() {
 
       if (programErr || !createdProgram) {
         setIsLoadingProgram(false)
-        return { ok: false, error: programErr?.message ?? "Р СњР Вµ РЎС“Р Т‘Р В°Р В»Р С•РЎРѓРЎРЉ РЎРѓР С•Р В·Р Т‘Р В°РЎвЂљРЎРЉ Р С—РЎР‚Р С•Р С–РЎР‚Р В°Р СР СРЎС“" }
+        return { ok: false, error: programErr?.message ?? "Не удалось создать программу" }
       }
 
       const programIdNew = createdProgram.id as string | number
@@ -348,7 +368,7 @@ export default function Home() {
 
       if (daysErr || !insertedDays || insertedDays.length === 0) {
         setIsLoadingProgram(false)
-        return { ok: false, error: daysErr?.message ?? "Р СњР Вµ РЎС“Р Т‘Р В°Р В»Р С•РЎРѓРЎРЉ РЎРѓР С•Р В·Р Т‘Р В°РЎвЂљРЎРЉ Р Т‘Р Р…Р С‘ Р С—РЎР‚Р С•Р С–РЎР‚Р В°Р СР СРЎвЂ№" }
+        return { ok: false, error: daysErr?.message ?? "Не удалось создать дни программы" }
       }
 
       const sortedDays = [...insertedDays].sort((a, b) => a.day_number - b.day_number)
@@ -356,9 +376,7 @@ export default function Home() {
         exList.map((ex, index) => ({
           program_day_id: d.id,
           name: ex.name,
-          target: ex.target,
-          unit: ex.unit,
-          weight: null,
+          target_reps: ex.target,
           sort_order: index + 1,
         }))
       )
@@ -369,14 +387,16 @@ export default function Home() {
           exList.map((ex, index) => ({
             program_day_id: d.id,
             name: ex.name,
-            target_reps: ex.target,
+            target: ex.target,
+            unit: ex.unit,
+            weight: null,
             sort_order: index + 1,
           }))
         )
         const { error: exerciseErr2 } = await supabase.from("day_exercises").insert(fallbackRows)
         if (exerciseErr2) {
           setIsLoadingProgram(false)
-          return { ok: false, error: exerciseErr2.message ?? exerciseErr1.message ?? "Р СњР Вµ РЎС“Р Т‘Р В°Р В»Р С•РЎРѓРЎРЉ РЎРѓР С•Р В·Р Т‘Р В°РЎвЂљРЎРЉ РЎС“Р С—РЎР‚Р В°Р В¶Р Р…Р ВµР Р…Р С‘РЎРЏ" }
+          return { ok: false, error: exerciseErr2.message ?? exerciseErr1.message ?? "Не удалось создать упражнения" }
         }
       }
 
@@ -391,10 +411,11 @@ export default function Home() {
 
       if (stateErr) {
         setIsLoadingProgram(false)
-        return { ok: false, error: stateErr.message ?? "Р СњР Вµ РЎС“Р Т‘Р В°Р В»Р С•РЎРѓРЎРЉ Р С•Р В±Р Р…Р С•Р Р†Р С‘РЎвЂљРЎРЉ РЎРѓР С•РЎРѓРЎвЂљР С•РЎРЏР Р…Р С‘Р Вµ Р С—Р С•Р В»РЎРЉР В·Р С•Р Р†Р В°РЎвЂљР ВµР В»РЎРЏ" }
+        return { ok: false, error: stateErr.message ?? "Не удалось обновить состояние пользователя" }
       }
 
       setProgramId(programIdNew)
+      setShowProgramMenu(false)
       setShowCustomBuilder(false)
       setTab("today")
       setDay(1)
@@ -409,12 +430,12 @@ export default function Home() {
       setIsLoadingProgram(false)
       return { ok: true }
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Р СњР ВµР С‘Р В·Р Р†Р ВµРЎРѓРЎвЂљР Р…Р В°РЎРЏ Р С•РЎв‚¬Р С‘Р В±Р С”Р В°"
+      const message = e instanceof Error ? e.message : "Неизвестная ошибка"
       setIsLoadingProgram(false)
       return { ok: false, error: message }
     }
   }
-  // Р Р†РЎС™РІР‚В¦ Day progress: equal-weight average across exercises
+  // Day progress: equal-weight average across exercises
   const dayTotals = useMemo(() => {
     if (exercises.length === 0) return { pct: 0 }
 
@@ -539,8 +560,8 @@ export default function Home() {
 
   const totalsSplit = useMemo(() => {
     const entries = Object.entries(historyByExercise)
-    const steps = entries.reduce((s, [name, v]) => s + (name.toLowerCase() === "Р РЋРІвЂљВ¬Р В Р’В°Р В РЎвЂ“Р В РЎвЂ" ? v : 0), 0)
-    const others = entries.reduce((s, [name, v]) => s + (name.toLowerCase() === "Р РЋРІвЂљВ¬Р В Р’В°Р В РЎвЂ“Р В РЎвЂ" ? 0 : v), 0)
+    const steps = entries.reduce((s, [name, v]) => s + (name.toLowerCase() === "\u0448\u0430\u0433\u0438" ? v : 0), 0)
+    const others = entries.reduce((s, [name, v]) => s + (name.toLowerCase() === "\u0448\u0430\u0433\u0438" ? 0 : v), 0)
     return { steps, others }
   }, [historyByExercise])
 
@@ -555,7 +576,7 @@ export default function Home() {
   if (loading || isLoadingProgram) {
     return (
       <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center">
-        <div className="text-sm text-neutral-400">Р В РЎС™Р В РЎвЂР В Р вЂ¦Р РЋРЎвЂњР РЋРІР‚С™Р В РЎвЂќР РЋРЎвЂњР Р†Р вЂљР’В¦</div>
+        <div className="text-sm text-neutral-400">Минутку…</div>
       </div>
     )
   }
@@ -566,7 +587,7 @@ export default function Home() {
       <div className="pointer-events-none fixed inset-x-0 top-0 h-64 bg-gradient-to-b from-indigo-500/10 via-fuchsia-500/5 to-transparent" />
 
       <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-6 pb-24">
-        {programId == null ? (
+        {showProgramMenu || programId == null ? (
           showCustomBuilder ? (
             <CustomProgramBuilder onBack={() => setShowCustomBuilder(false)} onCreate={createCustomProgram} />
           ) : (

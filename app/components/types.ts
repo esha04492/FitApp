@@ -7,7 +7,7 @@ export type Exercise = {
 
 export type HistoryEntry = {
   day: number
-  date: string // YYYY-MM-DD (Р»РѕРєР°Р»СЊРЅР°СЏ РґР°С‚Р°)
+  date: string // YYYY-MM-DD (локальная дата)
   totalDone: number
   totalTarget: number
 }
