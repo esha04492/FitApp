@@ -54,4 +54,8 @@ export async function POST(req: Request) {
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? "unknown" }, { status: 200 })
   }
+  
+}
+export async function GET() {
+  return Response.json({ ok: true, hint: "Telegram webhook endpoint. Send POST updates here." })
 }
