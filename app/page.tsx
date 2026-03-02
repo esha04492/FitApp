@@ -16,7 +16,15 @@ type TgWindow = Window & {
   Telegram?: {
     WebApp?: {
       initData?: string
-      initDataUnsafe?: { user?: { id?: number | string } }
+      initDataUnsafe?: {
+        user?: {
+          id?: number | string
+          username?: string
+          first_name?: string
+          last_name?: string
+          language_code?: string
+        }
+      }
       ready?: () => void
     }
   }
@@ -257,6 +265,69 @@ async function getOrCreateUserId() {
   return identity.id
 }
 
+async function persistTelegramProfile(internalUserId: string, debugEnabled: boolean) {
+  if (typeof window === "undefined") return
+  const tgUser = (window as TgWindow).Telegram?.WebApp?.initDataUnsafe?.user
+  if (!tgUser?.id) return
+
+  const telegramId = String(tgUser.id)
+  const username = tgUser.username ?? null
+  const firstName = tgUser.first_name ?? null
+  const lastName = tgUser.last_name ?? null
+  const languageCode = tgUser.language_code ?? null
+  const now = new Date().toISOString()
+
+  const attempts: Array<{ payload: Record<string, unknown>; onConflict: string }> = [
+    {
+      payload: {
+        user_id: internalUserId,
+        telegram_id: telegramId,
+        username: username,
+        first_name: firstName,
+        last_name: lastName,
+        language_code: languageCode,
+        updated_at: now,
+      },
+      onConflict: "user_id",
+    },
+    {
+      payload: {
+        user_id: internalUserId,
+        telegram_id: telegramId,
+        username: username,
+        first_name: firstName,
+        last_name: lastName,
+        language_code: languageCode,
+        updated_at: now,
+      },
+      onConflict: "telegram_id",
+    },
+    {
+      payload: {
+        user_id: internalUserId,
+        username: username,
+        first_name: firstName,
+        last_name: lastName,
+        updated_at: now,
+      },
+      onConflict: "user_id",
+    },
+  ]
+
+  let lastError: string | null = null
+  for (const attempt of attempts) {
+    const { error } = await supabase
+      .from("telegram_users")
+      .upsert(attempt.payload, { onConflict: attempt.onConflict })
+    if (!error) return
+    lastError = error.message
+  }
+
+  if (debugEnabled && lastError) {
+    console.error("telegram profile upsert failed:", lastError)
+  }
+}
+
 export default function Home() {
   const [dbg, setDbg] = useState<string>("")
   const [tab, setTab] = useState<"today" | "stats" | "leaderboard">("today")
@@ -442,12 +513,20 @@ export default function Home() {
         return
       }
 
-      const { data: tgRows } = await supabase.from("telegram_users").select("user_id,username").in("user_id", userIds)
-      const usernameMap = new Map<string, string>()
+      const { data: tgRows } = await supabase
+        .from("telegram_users")
+        .select("user_id,username,first_name")
+        .in("user_id", userIds)
+      const displayNameMap = new Map<string, string>()
       tgRows?.forEach((r) => {
         const key = String(r.user_id)
-        const username = r.username ? `@${r.username}` : ""
-        if (username) usernameMap.set(key, username)
+        if (r.username) {
+          displayNameMap.set(key, `@${r.username}`)
+          return
+        }
+        if (r.first_name) {
+          displayNameMap.set(key, String(r.first_name))
+        }
       })
 
       const starsPairs = await Promise.all(
@@ -459,7 +538,7 @@ export default function Home() {
 
       const sorted = starsPairs.sort((a, b) => b.stars - a.stars).slice(0, 20)
       const rows = sorted.map((item, idx) => {
-        const label = usernameMap.get(item.userId) ?? `User ${item.userId.slice(-6)}`
+        const label = displayNameMap.get(item.userId) ?? `User ${item.userId.slice(-6)}`
         return { rank: idx + 1, userId: item.userId, label, stars: item.stars }
       })
       setLeaderboardRows(rows)
@@ -634,6 +713,7 @@ export default function Home() {
       }
 
       const uid = identity.id
+      await persistTelegramProfile(uid, debugEnabled)
       const { data: states, error: stateErr } = await supabase
         .from("user_state")
         .select("user_id,program_id,current_day,updated_at")
