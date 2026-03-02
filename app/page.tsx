@@ -13,64 +13,47 @@ const PROGRAM_NAME = "100 days v.2"
 type TgWindow = Window & {
   Telegram?: {
     WebApp?: {
-      initData?: string
       initDataUnsafe?: { user?: { id?: number | string } }
     }
   }
 }
 
-function readTelegramUserId(): string | null {
-  if (typeof window === "undefined") return null
-  const tg = (window as TgWindow).Telegram
-  const directId = tg?.WebApp?.initDataUnsafe?.user?.id
-  if (directId != null) return String(directId)
+type StrictIdentity = { id: string | null; source: "telegram" | "telegram_no_id" | "local" }
 
-  const initData = tg?.WebApp?.initData
-  if (!initData) return null
+function getUserIdStrict(): StrictIdentity {
+  if (typeof window === "undefined") return { id: null, source: "telegram_no_id" }
+  const tg = (window as TgWindow).Telegram?.WebApp
 
-  try {
-    const params = new URLSearchParams(initData)
-    const rawUser = params.get("user")
-    if (!rawUser) return null
-    const parsed = JSON.parse(rawUser) as { id?: number | string }
-    if (parsed.id == null) return null
-    return String(parsed.id)
-  } catch {
-    return null
+  if (tg && tg.initDataUnsafe?.user?.id) {
+    return {
+      id: String(tg.initDataUnsafe.user.id),
+      source: "telegram",
+    }
+  }
+
+  if (tg) {
+    return {
+      id: null,
+      source: "telegram_no_id",
+    }
+  }
+
+  let localId = localStorage.getItem("local_user_id")
+  if (!localId) {
+    localId = crypto.randomUUID()
+    localStorage.setItem("local_user_id", localId)
+  }
+
+  return {
+    id: localId,
+    source: "local",
   }
 }
 
 async function getOrCreateUserId() {
-  const identity = await getUserIdentity()
+  const identity = getUserIdStrict()
+  if (!identity.id) throw new Error("Telegram user id is not available")
   return identity.id
-}
-
-async function getUserIdentity(): Promise<{ id: string; source: "telegram" | "local" }> {
-  const key = "user_id"
-  const inTelegram = typeof window !== "undefined" && Boolean((window as TgWindow).Telegram?.WebApp)
-
-  for (let i = 0; i < 20; i += 1) {
-    const telegramUserId = readTelegramUserId()
-    if (telegramUserId) {
-      localStorage.setItem(key, telegramUserId)
-      return { id: telegramUserId, source: "telegram" }
-    }
-    if (!inTelegram) break
-    await new Promise((resolve) => setTimeout(resolve, 75))
-  }
-
-  if (inTelegram) {
-    // Do not reuse a previous local user id inside Telegram if user.id was not resolved.
-    const fresh = crypto.randomUUID()
-    localStorage.setItem(key, fresh)
-    return { id: fresh, source: "local" }
-  }
-
-  const saved = localStorage.getItem(key)
-  if (saved) return { id: saved, source: "local" }
-  const id = crypto.randomUUID()
-  localStorage.setItem(key, id)
-  return { id, source: "local" }
 }
 
 export default function Home() {
@@ -91,6 +74,7 @@ export default function Home() {
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [historyByExercise, setHistoryByExercise] = useState<Record<string, number>>({})
   const [identityDebug, setIdentityDebug] = useState<string>("")
+  const [identitySource, setIdentitySource] = useState<StrictIdentity["source"]>("local")
 
   useEffect(() => {
     const savedTab = localStorage.getItem("tab")
@@ -226,10 +210,18 @@ export default function Home() {
     const init = async () => {
       setLoading(true)
       setIsLoadingProgram(true)
-      const identity = await getUserIdentity()
-      const uid = identity.id
+      const identity = getUserIdStrict()
+      setIdentitySource(identity.source)
       const debugEnabled = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "1"
-      setIdentityDebug(debugEnabled ? `uid: ${uid} (source: ${identity.source})` : "")
+      setIdentityDebug(debugEnabled ? `uid: ${identity.id ?? "null"} (source: ${identity.source})` : "")
+
+      if (identity.source === "telegram_no_id" || !identity.id) {
+        setLoading(false)
+        setIsLoadingProgram(false)
+        return
+      }
+
+      const uid = identity.id
       const { data: states, error: stateErr } = await supabase
         .from("user_state")
         .select("user_id,program_id,current_day,updated_at")
@@ -632,6 +624,17 @@ export default function Home() {
     const last7 = [...history].sort((a, b) => (a.date > b.date ? -1 : 1)).slice(0, 7)
     return { totalDays, totalReps, streak: current, last7 }
   }, [history])
+
+  if (identitySource === "telegram_no_id") {
+    return (
+      <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center px-6">
+        <div className="max-w-sm text-center">
+          <div className="text-2xl font-semibold tracking-tight">Open inside Telegram</div>
+          <div className="mt-2 text-sm text-neutral-400">This app must be opened from Telegram bot.</div>
+        </div>
+      </div>
+    )
+  }
 
   if (loading || isLoadingProgram) {
     return (

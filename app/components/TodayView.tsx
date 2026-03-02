@@ -117,7 +117,7 @@ export default function TodayView(props: {
           <div className="text-3xl font-semibold tracking-tight">Day {day}</div>
           {currentStreak > 0 ? (
             <span className="animate-pulse rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs text-amber-300">
-              Fire Streak <span className="font-bold">{currentStreak}</span> Fire
+              🔥 Streak <span className="font-bold">{currentStreak}</span> 🔥
             </span>
           ) : null}
         </div>
