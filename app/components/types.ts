@@ -3,6 +3,8 @@ export type Exercise = {
   name: string
   target_reps: number
   sort_order: number
+  catalog_exercise_id?: number | null
+  unit?: "reps" | "steps"
 }
 
 export type HistoryEntry = {

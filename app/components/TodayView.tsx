@@ -166,7 +166,7 @@ export default function TodayView(props: {
           const isCompleted = reps >= ex.target_reps
           const percent = clamp(Math.round((reps / ex.target_reps) * 100), 0, 100)
           const remaining = Math.max(ex.target_reps - reps, 0)
-          const isSteps = ex.target_reps >= 1000 || /step/i.test(ex.name)
+          const isSteps = ex.unit === "steps" || ex.target_reps >= 1000 || /step/i.test(ex.name)
 
           return (
             <div

@@ -15,8 +15,6 @@ type CreateBody = {
     catalogExerciseId?: number
     name?: string
     target?: number
-    unit?: "reps" | "steps"
-    weight?: number
   }>
 }
 
@@ -41,8 +39,6 @@ export async function POST(req: Request) {
           catalogExerciseId: Number(x.catalogExerciseId) || null,
           name: String(x.name ?? "").trim(),
           target: Math.max(1, Number(x.target) || 0),
-          unit: x.unit === "steps" ? "steps" : "reps",
-          weight: Number.isFinite(Number(x.weight)) ? Number(x.weight) : null,
         }))
         .filter((x) => x.name.length > 0) ?? []
 
@@ -120,48 +116,12 @@ export async function POST(req: Request) {
         catalog_exercise_id: ex.catalogExerciseId,
         name: ex.name,
         target_reps: ex.target,
-        unit: ex.unit,
-        weight: ex.weight,
-        sort_order: index + 1,
-      }))
-    )
-
-    const rowsAlt = sortedDays.flatMap((d) =>
-      exercises.map((ex, index) => ({
-        program_day_id: d.id,
-        catalog_exercise_id: ex.catalogExerciseId,
-        name: ex.name,
-        target: ex.target,
-        unit: ex.unit,
-        weight: ex.weight,
-        sort_order: index + 1,
-      }))
-    )
-
-    const rowsRepsNoCatalog = sortedDays.flatMap((d) =>
-      exercises.map((ex, index) => ({
-        program_day_id: d.id,
-        name: ex.name,
-        target_reps: ex.target,
-        unit: ex.unit,
-        weight: ex.weight,
-        sort_order: index + 1,
-      }))
-    )
-
-    const rowsAltNoCatalog = sortedDays.flatMap((d) =>
-      exercises.map((ex, index) => ({
-        program_day_id: d.id,
-        name: ex.name,
-        target: ex.target,
-        unit: ex.unit,
-        weight: ex.weight,
         sort_order: index + 1,
       }))
     )
 
     let exerciseInsertError: { message?: string } | null = null
-    const exerciseInsertAttempts = [rowsReps, rowsAlt, rowsRepsNoCatalog, rowsAltNoCatalog]
+    const exerciseInsertAttempts = [rowsReps]
     for (const attemptRows of exerciseInsertAttempts) {
       const { error } = await supabase.from("day_exercises").insert(attemptRows)
       if (!error) {

@@ -351,33 +351,40 @@ export default function Home() {
     let exList: Exercise[] = []
     const { data: exs, error: exerr } = await supabase
       .from("day_exercises")
-      .select("id,name,target_reps,sort_order")
+      .select("id,name,target_reps,sort_order,catalog_exercise_id")
       .eq("program_day_id", pd.id)
       .order("sort_order")
 
-    if (!exerr) {
-      exList = (exs as Exercise[]) ?? []
-    } else {
-      const { data: fallbackExs, error: fallbackErr } = await supabase
-        .from("day_exercises")
-        .select("id,name,target,sort_order")
-        .eq("program_day_id", pd.id)
-        .order("sort_order")
+    if (exerr) {
+      setDbg("ERROR day_exercises: " + exerr.message)
+      setExercises([])
+      setProgress({})
+      return
+    }
+    exList = (exs as Exercise[]) ?? []
 
-      if (fallbackErr) {
-        setDbg("ERROR day_exercises: " + fallbackErr.message)
-        setExercises([])
-        setProgress({})
-        return
+    const catalogIds = Array.from(
+      new Set(
+        exList
+          .map((x) => x.catalog_exercise_id)
+          .filter((x): x is number => x != null)
+      )
+    )
+    if (catalogIds.length > 0) {
+      const { data: catalogRows } = await supabase
+        .from("exercise_catalog")
+        .select("id,unit")
+        .in("id", catalogIds)
+
+      if (catalogRows?.length) {
+        const unitMap = new Map<number, "reps" | "steps">(
+          catalogRows.map((r) => [r.id as number, (r.unit === "steps" ? "steps" : "reps") as "reps" | "steps"])
+        )
+        exList = exList.map((row) => ({
+          ...row,
+          unit: row.catalog_exercise_id != null ? unitMap.get(row.catalog_exercise_id) : undefined,
+        }))
       }
-
-      exList =
-        fallbackExs?.map((row) => ({
-          id: row.id,
-          name: row.name,
-          target_reps: row.target,
-          sort_order: row.sort_order,
-        })) ?? []
     }
     setExercises(exList)
 
@@ -695,15 +702,7 @@ export default function Home() {
           .from("day_exercises")
           .update({ name: trimmedName, target_reps: safeTarget })
           .eq("id", payload.exerciseId)
-        if (err1) {
-          const { error: err2 } = await supabase
-            .from("day_exercises")
-            .update({ name: trimmedName, target: safeTarget })
-            .eq("id", payload.exerciseId)
-          if (err2) {
-            return { ok: false, error: err2.message ?? err1.message ?? "Update failed" }
-          }
-        }
+        if (err1) return { ok: false, error: err1.message ?? "Update failed" }
       } else {
         const { data: dayRows, error: daysErr } = await supabase
           .from("program_days")
@@ -718,16 +717,7 @@ export default function Home() {
           .update({ name: trimmedName, target_reps: safeTarget })
           .in("program_day_id", dayIds)
           .eq("name", payload.originalName)
-        if (err1) {
-          const { error: err2 } = await supabase
-            .from("day_exercises")
-            .update({ name: trimmedName, target: safeTarget })
-            .in("program_day_id", dayIds)
-            .eq("name", payload.originalName)
-          if (err2) {
-            return { ok: false, error: err2.message ?? err1.message ?? "Update failed" }
-          }
-        }
+        if (err1) return { ok: false, error: err1.message ?? "Update failed" }
       }
 
       const uid = await getOrCreateUserId()
