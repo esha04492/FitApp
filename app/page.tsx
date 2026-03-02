@@ -852,7 +852,6 @@ export default function Home() {
         .delete()
         .eq("user_id", uid)
         .eq("day_exercise_id", id)
-        .eq("local_date", entryDate)
       if (!fallbackErr) {
         const { error: insertErr } = await supabase
           .from("user_exercise_progress")
@@ -998,11 +997,12 @@ export default function Home() {
       .from("user_exercise_progress")
       .upsert(progressRows, { onConflict: "user_id,day_exercise_id,local_date" })
     if (pinsErr) {
+      const dayExerciseIds = exercises.map((ex) => ex.id)
       const { error: pdelErr2 } = await supabase
         .from("user_exercise_progress")
         .delete()
         .eq("user_id", uid)
-        .eq("local_date", entryDate)
+        .in("day_exercise_id", dayExerciseIds)
       if (pdelErr2) {
         setDbg("ERROR stars save: " + pdelErr2.message)
         return
