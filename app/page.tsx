@@ -891,10 +891,14 @@ export default function Home() {
         .from("user_exercise_progress")
         .insert({ user_id: uid, local_date: entryDate, day_exercise_id: id, done: updated })
       if (!retryInsertErr) return
-      setDbg("ERROR save progress: " + retryInsertErr.message)
+      if (!retryInsertErr.message?.includes("user_exercise_progress_pkey")) {
+        setDbg("ERROR save progress: " + retryInsertErr.message)
+      }
       return
     }
-    setDbg("ERROR save progress: " + retryUpsertErr.message)
+    if (!retryUpsertErr.message?.includes("user_exercise_progress_pkey")) {
+      setDbg("ERROR save progress: " + retryUpsertErr.message)
+    }
   }
 
   const addCustomReps = async (id: string, target: number) => {
