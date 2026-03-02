@@ -4,7 +4,7 @@ type LeaderboardRow = {
   rank: number
   userId: string
   label: string
-  totalUnits: number
+  totalStars: number
 }
 
 export default function LeaderboardView(props: {
@@ -36,10 +36,10 @@ export default function LeaderboardView(props: {
     <>
       <div className="mb-7 text-center">
         <div className="text-sm text-neutral-400">Leaderboard</div>
-        <div className="mt-1 text-3xl font-semibold tracking-tight">Total units</div>
+        <div className="mt-1 text-3xl font-semibold tracking-tight">Total stars</div>
 
         <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 backdrop-blur text-left">
-          <div className="text-xs text-amber-300/90">Total units</div>
+          <div className="text-xs text-amber-300/90">Total stars</div>
           <div className="mt-1 text-3xl font-semibold tabular-nums text-amber-200">{myTotalStars.toLocaleString("en-US")}</div>
         </div>
       </div>
@@ -115,7 +115,7 @@ export default function LeaderboardView(props: {
                       {row.label}
                     </div>
                     <div className="text-right">
-                      <div className="text-sm font-semibold tabular-nums text-amber-200">{row.totalUnits.toLocaleString("en-US")}</div>
+                      <div className="text-sm font-semibold tabular-nums text-amber-200">{row.totalStars.toLocaleString("en-US")}</div>
                     </div>
                   </div>
                 ))

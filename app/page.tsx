@@ -348,7 +348,7 @@ export default function Home() {
   const [historyByExercise, setHistoryByExercise] = useState<Record<string, number>>({})
   const [myTotalStars, setMyTotalStars] = useState(0)
   const [leaderboardRows, setLeaderboardRows] = useState<
-    Array<{ rank: number; userId: string; label: string; totalUnits: number }>
+    Array<{ rank: number; userId: string; label: string; totalStars: number }>
   >([])
   const [leaderboardLoading, setLeaderboardLoading] = useState(false)
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null)
@@ -436,15 +436,85 @@ export default function Home() {
     return map
   }
 
-  const computeTotalUnits = async (uid: string): Promise<number> => {
-    type BreakdownRow = { reps_done?: number | null }
-    const { data, error } = await supabase
+  const computeTotalStarsByUsers = async (userIds: string[]) => {
+    const catalogMap = await ensureCatalogMeta()
+    const totals = new Map<string, number>()
+    userIds.forEach((id) => totals.set(id, 0))
+    if (userIds.length === 0) return totals
+
+    type BreakdownRow = {
+      user_id?: string | null
+      done?: number | null
+      catalog_exercise_id?: number | null
+      day_exercise_id?: string | null
+    }
+
+    const fullQuery = await supabase
       .from("user_day_history_exercises")
-      .select("reps_done")
-      .eq("user_id", uid)
-    if (error) throw new Error(error.message)
-    const total = ((data as BreakdownRow[]) ?? []).reduce((sum, row) => sum + (Number(row.reps_done) || 0), 0)
-    return total
+      .select("user_id,done,catalog_exercise_id,day_exercise_id")
+      .in("user_id", userIds)
+
+    let breakdownRows: BreakdownRow[] = []
+    if (fullQuery.error) {
+      const fallbackQuery = await supabase
+        .from("user_day_history_exercises")
+        .select("user_id,reps_done,catalog_exercise_id,day_exercise_id")
+        .in("user_id", userIds)
+      if (fallbackQuery.error) throw new Error(fallbackQuery.error.message)
+      breakdownRows = ((fallbackQuery.data as Array<BreakdownRow & { reps_done?: number | null }>) ?? []).map((r) => ({
+        user_id: r.user_id,
+        done: Number(r.reps_done) || 0,
+        catalog_exercise_id: r.catalog_exercise_id,
+        day_exercise_id: r.day_exercise_id,
+      }))
+    } else {
+      breakdownRows = (fullQuery.data as BreakdownRow[]) ?? []
+    }
+
+    const dayExerciseIds = Array.from(
+      new Set(
+        breakdownRows
+          .filter((r) => r.catalog_exercise_id == null && r.day_exercise_id)
+          .map((r) => String(r.day_exercise_id))
+      )
+    )
+    const dayCatalogMap = new Map<string, number>()
+    if (dayExerciseIds.length > 0) {
+      const { data: dayRows, error: dayErr } = await supabase
+        .from("day_exercises")
+        .select("id,catalog_exercise_id")
+        .in("id", dayExerciseIds)
+      if (!dayErr) {
+        ;(dayRows ?? []).forEach((r) => {
+          const cid = Number((r as { catalog_exercise_id?: number | null }).catalog_exercise_id)
+          if (Number.isFinite(cid)) dayCatalogMap.set(String(r.id), cid)
+        })
+      }
+    }
+
+    breakdownRows.forEach((row) => {
+      const userId = String(row.user_id ?? "")
+      if (!userId || !totals.has(userId)) return
+      const done = Number(row.done) || 0
+      if (done <= 0) return
+
+      let catalogId: number | null = null
+      const directCatalogId = Number(row.catalog_exercise_id)
+      if (Number.isFinite(directCatalogId)) {
+        catalogId = directCatalogId
+      } else if (row.day_exercise_id) {
+        catalogId = dayCatalogMap.get(String(row.day_exercise_id)) ?? null
+      }
+      if (catalogId == null) return
+
+      const weight = Number(catalogMap[catalogId]?.weight)
+      if (!Number.isFinite(weight) || weight <= 0) return
+
+      const stars = Math.floor(done / weight)
+      totals.set(userId, (totals.get(userId) ?? 0) + stars)
+    })
+
+    return totals
   }
 
   const loadLeaderboard = async (uid: string) => {
@@ -452,9 +522,6 @@ export default function Home() {
     setLeaderboardError(null)
     setLeaderboardDisplayNameError(null)
     try {
-      const mine = await computeTotalUnits(uid)
-      setMyTotalStars(mine)
-
       const { data: stateRows, error: stateErr } = await supabase.from("user_state").select("user_id")
       if (stateErr) throw new Error(stateErr.message)
       const userIds = Array.from(new Set((stateRows ?? []).map((r) => String(r.user_id)).filter(Boolean)))
@@ -510,21 +577,17 @@ export default function Home() {
       setShowLeaderboardNameForm(displayNameColumnMissing ? true : !currentUserDisplayName)
       if (currentUserDisplayName) setLeaderboardDisplayName(currentUserDisplayName)
 
-      const totalPairs = await Promise.all(
-        userIds.map(async (userId) => {
-          const totalUnits = await computeTotalUnits(userId)
-          return { userId, totalUnits }
-        })
-      )
-
-      const sorted = totalPairs.sort((a, b) => b.totalUnits - a.totalUnits).slice(0, 20)
+      const totalsByUser = await computeTotalStarsByUsers(userIds)
+      setMyTotalStars(totalsByUser.get(uid) ?? 0)
+      const totalPairs = userIds.map((userId) => ({ userId, totalStars: totalsByUser.get(userId) ?? 0 }))
+      const sorted = totalPairs.sort((a, b) => b.totalStars - a.totalStars).slice(0, 20)
       const rows = sorted.map((item, idx) => {
         const label = displayNameMap.get(item.userId) ?? `User ${item.userId.slice(-4)}`
         return {
           rank: idx + 1,
           userId: item.userId,
           label,
-          totalUnits: item.totalUnits,
+          totalStars: item.totalStars,
         }
       })
       setLeaderboardRows(rows)
@@ -727,10 +790,12 @@ export default function Home() {
     setLeaderboardDisplayNameSaving(true)
     setLeaderboardDisplayNameError(null)
     const now = new Date().toISOString()
+    const tgId = (window as TgWindow).Telegram?.WebApp?.initDataUnsafe?.user?.id
+    const chatId = tgId != null ? String(tgId) : uid
 
     const { error } = await supabase
       .from("telegram_users")
-      .upsert({ user_id: uid, display_name: value, updated_at: now }, { onConflict: "user_id" })
+      .upsert({ user_id: uid, chat_id: chatId, display_name: value, updated_at: now }, { onConflict: "user_id" })
     if (error) {
       const message = error.message?.includes("display_name") ? "display_name column missing" : error.message
       setLeaderboardDisplayNameError(message)
