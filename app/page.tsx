@@ -535,19 +535,60 @@ export default function Home() {
       user_id?: string | null
       reps_done?: number | null
       catalog_exercise_id?: number | null
+      day_exercise_id?: string | null
     }
-    const { data: breakdownRows, error: breakdownErr } = await supabase
+    let breakdownRows: BreakdownRow[] = []
+    const repsQuery = await supabase
       .from("user_day_history_exercises")
-      .select("user_id,reps_done,catalog_exercise_id")
+      .select("user_id,reps_done,catalog_exercise_id,day_exercise_id")
       .in("user_id", userIds)
-    if (breakdownErr) throw new Error(breakdownErr.message)
+    if (repsQuery.error) {
+      const doneQuery = await supabase
+        .from("user_day_history_exercises")
+        .select("user_id,done,catalog_exercise_id,day_exercise_id")
+        .in("user_id", userIds)
+      if (doneQuery.error) throw new Error(doneQuery.error.message)
+      breakdownRows = ((doneQuery.data as Array<BreakdownRow & { done?: number | null }>) ?? []).map((r) => ({
+        user_id: r.user_id,
+        reps_done: Number(r.done) || 0,
+        catalog_exercise_id: r.catalog_exercise_id,
+        day_exercise_id: r.day_exercise_id,
+      }))
+    } else {
+      breakdownRows = (repsQuery.data as BreakdownRow[]) ?? []
+    }
 
-    ;((breakdownRows as BreakdownRow[]) ?? []).forEach((row) => {
+    const dayExerciseIds = Array.from(
+      new Set(
+        breakdownRows
+          .filter((r) => (r.catalog_exercise_id == null || !Number.isFinite(Number(r.catalog_exercise_id))) && r.day_exercise_id)
+          .map((r) => String(r.day_exercise_id))
+      )
+    )
+    const dayCatalogMap = new Map<string, number>()
+    if (dayExerciseIds.length > 0) {
+      const { data: dayRows, error: dayErr } = await supabase
+        .from("day_exercises")
+        .select("id,catalog_exercise_id")
+        .in("id", dayExerciseIds)
+      if (!dayErr) {
+        ;(dayRows ?? []).forEach((r) => {
+          const cid = Number((r as { catalog_exercise_id?: number | null }).catalog_exercise_id)
+          if (Number.isFinite(cid)) dayCatalogMap.set(String(r.id), cid)
+        })
+      }
+    }
+
+    breakdownRows.forEach((row) => {
       const userId = String(row.user_id ?? "")
       if (!userId || !totals.has(userId)) return
       const done = Number(row.reps_done) || 0
       if (done <= 0) return
-      const catalogId = Number(row.catalog_exercise_id)
+
+      let catalogId = Number(row.catalog_exercise_id)
+      if (!Number.isFinite(catalogId) && row.day_exercise_id) {
+        catalogId = Number(dayCatalogMap.get(String(row.day_exercise_id)))
+      }
       if (!Number.isFinite(catalogId)) return
 
       const weight = Number(weightByCatalogId.get(catalogId))
