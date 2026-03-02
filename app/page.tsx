@@ -20,6 +20,18 @@ type TgWindow = Window & {
 
 type StrictIdentity = { id: string | null; source: "telegram" | "telegram_no_id" | "local" }
 
+function isTelegramContext(): boolean {
+  if (typeof window === "undefined") return false
+  if ((window as TgWindow).Telegram?.WebApp) return true
+
+  const params = new URLSearchParams(window.location.search)
+  if (params.has("tgWebAppData") || params.has("tgWebAppVersion")) return true
+  for (const key of params.keys()) {
+    if (key.startsWith("tgWebApp")) return true
+  }
+  return false
+}
+
 function getUserIdStrict(): StrictIdentity {
   if (typeof window === "undefined") return { id: null, source: "telegram_no_id" }
   const tg = (window as TgWindow).Telegram?.WebApp
@@ -31,7 +43,7 @@ function getUserIdStrict(): StrictIdentity {
     }
   }
 
-  if (tg) {
+  if (isTelegramContext()) {
     return {
       id: null,
       source: "telegram_no_id",
@@ -50,8 +62,17 @@ function getUserIdStrict(): StrictIdentity {
   }
 }
 
+async function resolveStrictIdentity(attempts = 20, delayMs = 100): Promise<StrictIdentity> {
+  for (let i = 0; i < attempts; i += 1) {
+    const identity = getUserIdStrict()
+    if (identity.source !== "telegram_no_id" && identity.id) return identity
+    await new Promise((resolve) => setTimeout(resolve, delayMs))
+  }
+  return getUserIdStrict()
+}
+
 async function getOrCreateUserId() {
-  const identity = getUserIdStrict()
+  const identity = await resolveStrictIdentity()
   if (!identity.id) throw new Error("Telegram user id is not available")
   return identity.id
 }
@@ -210,7 +231,7 @@ export default function Home() {
     const init = async () => {
       setLoading(true)
       setIsLoadingProgram(true)
-      const identity = getUserIdStrict()
+      const identity = await resolveStrictIdentity()
       setIdentitySource(identity.source)
       const debugEnabled = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "1"
       setIdentityDebug(debugEnabled ? `uid: ${identity.id ?? "null"} (source: ${identity.source})` : "")
