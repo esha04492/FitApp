@@ -517,14 +517,21 @@ export default function Home() {
   const computeTotalStarsByUsers = async (userIds: string[]) => {
     const { data: catalogRows, error: catalogErr } = await supabase
       .from("exercise_catalog")
-      .select("id,weight")
+      .select("id,weight,label")
       .eq("is_active", true)
     if (catalogErr) throw new Error(catalogErr.message)
     const weightByCatalogId = new Map<number, number>()
+    const weightByName = new Map<string, number>()
+    const catalogIdByName = new Map<string, number>()
     ;(catalogRows ?? []).forEach((r) => {
       const id = Number(r.id)
       const weight = Number(r.weight)
       if (Number.isFinite(id)) weightByCatalogId.set(id, weight)
+      const label = String((r as { label?: string | null }).label ?? "").trim().toLowerCase()
+      if (label) {
+        weightByName.set(label, weight)
+        catalogIdByName.set(label, id)
+      }
     })
 
     const totals = new Map<string, number>()
@@ -532,20 +539,22 @@ export default function Home() {
     if (userIds.length === 0) return totals
 
     type BreakdownRow = {
+      id?: string | null
       user_id?: string | null
       reps_done?: number | null
       catalog_exercise_id?: number | null
       day_exercise_id?: string | null
+      exercise_name?: string | null
     }
     let breakdownRows: BreakdownRow[] = []
     const repsQueryWithDayExercise = await supabase
       .from("user_day_history_exercises")
-      .select("user_id,reps_done,catalog_exercise_id,day_exercise_id")
+      .select("id,user_id,reps_done,catalog_exercise_id,day_exercise_id,exercise_name")
       .in("user_id", userIds)
     if (repsQueryWithDayExercise.error) {
       const repsQuery = await supabase
         .from("user_day_history_exercises")
-        .select("user_id,reps_done,catalog_exercise_id")
+        .select("id,user_id,reps_done,catalog_exercise_id,exercise_name")
         .in("user_id", userIds)
       if (repsQuery.error) throw new Error(repsQuery.error.message)
       breakdownRows = (repsQuery.data as BreakdownRow[]) ?? []
@@ -574,6 +583,7 @@ export default function Home() {
       }
     }
 
+    const historyCatalogBackfill: Array<{ id: string; catalogId: number }> = []
     breakdownRows.forEach((row) => {
       const userId = String(row.user_id ?? "")
       if (!userId || !totals.has(userId)) return
@@ -584,14 +594,31 @@ export default function Home() {
       if (!Number.isFinite(catalogId) && row.day_exercise_id) {
         catalogId = Number(dayCatalogMap.get(String(row.day_exercise_id)))
       }
-      if (!Number.isFinite(catalogId)) return
-
-      const weight = Number(weightByCatalogId.get(catalogId))
+      if (!Number.isFinite(catalogId)) {
+        const exName = String(row.exercise_name ?? "").trim().toLowerCase()
+        catalogId = Number(catalogIdByName.get(exName))
+      }
+      if (Number.isFinite(catalogId) && row.catalog_exercise_id == null && row.id) {
+        historyCatalogBackfill.push({ id: String(row.id), catalogId: Number(catalogId) })
+      }
+      let weight = Number.isFinite(catalogId) ? Number(weightByCatalogId.get(catalogId)) : NaN
+      if (!Number.isFinite(weight) || weight <= 0) {
+        const exName = String(row.exercise_name ?? "").trim().toLowerCase()
+        weight = Number(weightByName.get(exName))
+      }
       if (!Number.isFinite(weight) || weight <= 0) return
 
       const stars = Math.floor(done / weight)
       totals.set(userId, (totals.get(userId) ?? 0) + stars)
     })
+
+    if (historyCatalogBackfill.length > 0) {
+      await Promise.all(
+        historyCatalogBackfill.map((item) =>
+          supabase.from("user_day_history_exercises").update({ catalog_exercise_id: item.catalogId }).eq("id", item.id)
+        )
+      )
+    }
 
     return totals
   }
@@ -706,24 +733,39 @@ export default function Home() {
     }
     exList = (exs as Exercise[]) ?? []
 
-    const catalogIds = Array.from(
-      new Set(
-        exList
-          .map((x) => x.catalog_exercise_id)
-          .filter((x): x is number => x != null)
-      )
-    )
     const catalogMap = await ensureCatalogMeta()
+    const catalogIdByLabel = new Map<string, number>()
+    Object.entries(catalogMap).forEach(([id, meta]) => {
+      catalogIdByLabel.set(meta.label.trim().toLowerCase(), Number(id))
+    })
 
-    exList = exList.map((row) => ({
-      ...row,
-      unit: row.catalog_exercise_id != null ? catalogMap[row.catalog_exercise_id]?.unit : undefined,
-      weight: row.catalog_exercise_id != null ? catalogMap[row.catalog_exercise_id]?.weight : null,
-      default_target:
-        row.catalog_exercise_id != null
-          ? catalogMap[row.catalog_exercise_id]?.defaultTarget
-          : null,
-    }))
+    const missingCatalogUpdates: Array<{ id: string; catalogId: number }> = []
+
+    exList = exList.map((row) => {
+      let resolvedCatalogId = row.catalog_exercise_id ?? null
+      if (resolvedCatalogId == null) {
+        const byNameId = catalogIdByLabel.get(String(row.name ?? "").trim().toLowerCase())
+        if (Number.isFinite(Number(byNameId))) {
+          resolvedCatalogId = Number(byNameId)
+          missingCatalogUpdates.push({ id: row.id, catalogId: Number(byNameId) })
+        }
+      }
+      return {
+        ...row,
+        catalog_exercise_id: resolvedCatalogId,
+        unit: resolvedCatalogId != null ? catalogMap[resolvedCatalogId]?.unit : undefined,
+        weight: resolvedCatalogId != null ? catalogMap[resolvedCatalogId]?.weight : null,
+        default_target: resolvedCatalogId != null ? catalogMap[resolvedCatalogId]?.defaultTarget : null,
+      }
+    })
+
+    if (missingCatalogUpdates.length > 0) {
+      await Promise.all(
+        missingCatalogUpdates.map((item) =>
+          supabase.from("day_exercises").update({ catalog_exercise_id: item.catalogId }).eq("id", item.id)
+        )
+      )
+    }
     setExercises(exList)
 
     if (exList.length === 0) {
