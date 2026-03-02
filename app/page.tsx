@@ -7,6 +7,7 @@ import CustomProgramBuilder from "./components/CustomProgramBuilder"
 import type { BuilderExercise } from "./components/CustomProgramBuilder"
 import TodayView from "./components/TodayView"
 import StatsView from "./components/StatsView"
+import LeaderboardView from "./components/LeaderboardView"
 import TabBar from "./components/TabBar"
 import { clamp, computeStreaks, localISODate } from "./lib/date"
 const PROGRAM_NAME = "100 days v.2"
@@ -258,7 +259,7 @@ async function getOrCreateUserId() {
 
 export default function Home() {
   const [dbg, setDbg] = useState<string>("")
-  const [tab, setTab] = useState<"today" | "stats">("today")
+  const [tab, setTab] = useState<"today" | "stats" | "leaderboard">("today")
 
   const [loading, setLoading] = useState(true)
   const [programId, setProgramId] = useState<string | number | null>(null)
@@ -273,13 +274,17 @@ export default function Home() {
 
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [historyByExercise, setHistoryByExercise] = useState<Record<string, number>>({})
+  const [myStars, setMyStars] = useState(0)
+  const [leaderboardRows, setLeaderboardRows] = useState<Array<{ rank: number; userId: string; label: string; stars: number }>>([])
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false)
+  const [leaderboardError, setLeaderboardError] = useState<string | null>(null)
   const [identityDebug, setIdentityDebug] = useState<string>("")
   const [identityDiagnostics, setIdentityDiagnostics] = useState<string>("")
   const [identitySource, setIdentitySource] = useState<StrictIdentity["source"]>("local")
 
   useEffect(() => {
     const savedTab = localStorage.getItem("tab")
-    if (savedTab === "today" || savedTab === "stats") setTab(savedTab)
+    if (savedTab === "today" || savedTab === "stats" || savedTab === "leaderboard") setTab(savedTab)
   }, [])
 
   useEffect(() => {
@@ -331,6 +336,97 @@ export default function Home() {
       map[r.exercise_name] = (map[r.exercise_name] || 0) + r.reps_done
     })
     setHistoryByExercise(map)
+  }
+
+  const roundStars = (value: number) => Math.round(value * 10) / 10
+
+  const computeTotalStars = async (uid: string): Promise<number> => {
+    const { data: doneRows, error: doneErr } = await supabase
+      .from("user_exercise_progress")
+      .select("day_exercise_id,done")
+      .eq("user_id", uid)
+
+    let rows: Array<{ day_exercise_id: string; done: number }> = []
+
+    if (doneErr) {
+      const { data: repsRows, error: repsErr } = await supabase
+        .from("user_exercise_progress")
+        .select("day_exercise_id,reps_done")
+        .eq("user_id", uid)
+      if (repsErr) throw new Error(repsErr.message)
+      rows =
+        repsRows?.map((r) => ({
+          day_exercise_id: String(r.day_exercise_id),
+          done: Number(r.reps_done) || 0,
+        })) ?? []
+    } else {
+      rows =
+        doneRows?.map((r) => ({
+          day_exercise_id: String(r.day_exercise_id),
+          done: Number(r.done) || 0,
+        })) ?? []
+    }
+
+    if (rows.length === 0) return 0
+
+    const ids = Array.from(new Set(rows.map((r) => r.day_exercise_id)))
+    const { data: weightRows, error: weightErr } = await supabase
+      .from("day_exercises")
+      .select("id,weight")
+      .in("id", ids)
+    if (weightErr) throw new Error(weightErr.message)
+
+    const weightMap = new Map<string, number>()
+    weightRows?.forEach((r) => {
+      weightMap.set(String(r.id), Number(r.weight) || 1)
+    })
+
+    const total = rows.reduce((sum, row) => sum + row.done * (weightMap.get(row.day_exercise_id) ?? 1), 0)
+    return roundStars(total)
+  }
+
+  const loadLeaderboard = async (uid: string) => {
+    setLeaderboardLoading(true)
+    setLeaderboardError(null)
+    try {
+      const mine = await computeTotalStars(uid)
+      setMyStars(mine)
+
+      const { data: stateRows, error: stateErr } = await supabase.from("user_state").select("user_id")
+      if (stateErr) throw new Error(stateErr.message)
+      const userIds = Array.from(new Set((stateRows ?? []).map((r) => String(r.user_id)).filter(Boolean)))
+
+      if (userIds.length === 0) {
+        setLeaderboardRows([])
+        setLeaderboardLoading(false)
+        return
+      }
+
+      const { data: tgRows } = await supabase.from("telegram_users").select("user_id,username").in("user_id", userIds)
+      const usernameMap = new Map<string, string>()
+      tgRows?.forEach((r) => {
+        const key = String(r.user_id)
+        const username = r.username ? `@${r.username}` : ""
+        if (username) usernameMap.set(key, username)
+      })
+
+      const starsPairs = await Promise.all(
+        userIds.map(async (userId) => {
+          const stars = await computeTotalStars(userId)
+          return { userId, stars }
+        })
+      )
+
+      const sorted = starsPairs.sort((a, b) => b.stars - a.stars).slice(0, 20)
+      const rows = sorted.map((item, idx) => {
+        const label = usernameMap.get(item.userId) ?? `User ${item.userId.slice(-6)}`
+        return { rank: idx + 1, userId: item.userId, label, stars: item.stars }
+      })
+      setLeaderboardRows(rows)
+    } catch (e) {
+      setLeaderboardError(e instanceof Error ? e.message : "Unknown error")
+    }
+    setLeaderboardLoading(false)
   }
 
   const loadDay = async (uid: string, pid: string | number, dayNumber: number) => {
@@ -474,6 +570,7 @@ export default function Home() {
       await loadDay(uid, selectedProgramId, currentDay)
       await fetchHistory(uid, selectedProgramId)
       await fetchHistoryBreakdown(uid, selectedProgramId)
+      await loadLeaderboard(uid)
 
       setDbg(`OK: ${PROGRAM_NAME}, day ${currentDay}`)
       setLoading(false)
@@ -483,6 +580,20 @@ export default function Home() {
     init()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    const run = async () => {
+      if (tab !== "leaderboard") return
+      try {
+        const uid = await getOrCreateUserId()
+        await loadLeaderboard(uid)
+      } catch (e) {
+        setLeaderboardError(e instanceof Error ? e.message : "Unknown error")
+      }
+    }
+    run()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, programId])
 
   const chooseBuiltInProgram = async () => {
     const uid = await getOrCreateUserId()
@@ -772,6 +883,27 @@ export default function Home() {
       return
     }
 
+    const progressRows = exercises.map((ex) => ({
+      user_id: uid,
+      local_date: entryDate,
+      day_exercise_id: ex.id,
+      done: progress[ex.id] || 0,
+    }))
+    const { error: pdelErr } = await supabase
+      .from("user_exercise_progress")
+      .delete()
+      .eq("user_id", uid)
+      .eq("local_date", entryDate)
+    if (pdelErr) {
+      setDbg("ERROR stars delete: " + pdelErr.message)
+      return
+    }
+    const { error: pinsErr } = await supabase.from("user_exercise_progress").insert(progressRows)
+    if (pinsErr) {
+      setDbg("ERROR stars save: " + pinsErr.message)
+      return
+    }
+
     // 2) increment user_state day
     const { error: uerr } = await supabase
       .from("user_state")
@@ -805,6 +937,7 @@ export default function Home() {
     await loadDay(uid, programId, next)
     await fetchHistory(uid, programId)
     await fetchHistoryBreakdown(uid, programId)
+    await loadLeaderboard(uid)
 
     setDbg(`OK: ${PROGRAM_NAME}, day ${next}`)
   }
@@ -893,7 +1026,7 @@ export default function Home() {
             pretty={pretty}
             editExercise={editExercise}
           />
-        ) : (
+        ) : tab === "stats" ? (
           <StatsView
           totalsSplit={totalsSplit}
             day={day}
@@ -942,10 +1075,19 @@ export default function Home() {
               setCustomInput({})
               setHistory([])
               setHistoryByExercise({})
+              setMyStars(0)
+              setLeaderboardRows([])
               setTab("today")
 
               setDbg("RESET OK")
             }}
+          />
+        ) : (
+          <LeaderboardView
+            myStars={myStars}
+            rows={leaderboardRows}
+            loading={leaderboardLoading}
+            error={leaderboardError}
           />
         )}
       </div>

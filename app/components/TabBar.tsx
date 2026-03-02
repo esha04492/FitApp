@@ -5,17 +5,20 @@ export default function TabBar({
   tab,
   setTab,
 }: {
-  tab: "today" | "stats"
-  setTab: (t: "today" | "stats") => void
+  tab: "today" | "stats" | "leaderboard"
+  setTab: (t: "today" | "stats" | "leaderboard") => void
 }) {
   return (
     <div className="fixed inset-x-0 bottom-0 border-t border-white/10 bg-neutral-950/70 backdrop-blur">
-      <div className="mx-auto grid max-w-md grid-cols-2 gap-2 px-5 py-3">
+      <div className="mx-auto grid max-w-md grid-cols-3 gap-2 px-5 py-3">
         <TabBtn active={tab === "today"} onClick={() => setTab("today")}>
           Today
         </TabBtn>
         <TabBtn active={tab === "stats"} onClick={() => setTab("stats")}>
           Stats
+        </TabBtn>
+        <TabBtn active={tab === "leaderboard"} onClick={() => setTab("leaderboard")}>
+          Leaderboard
         </TabBtn>
       </div>
     </div>
