@@ -13,6 +13,7 @@ const PROGRAM_NAME = "100 days v.2"
 type TgWindow = Window & {
   Telegram?: {
     WebApp?: {
+      initData?: string
       initDataUnsafe?: { user?: { id?: number | string } }
     }
   }
@@ -22,23 +23,73 @@ type StrictIdentity = { id: string | null; source: "telegram" | "telegram_no_id"
 
 function isTelegramContext(): boolean {
   if (typeof window === "undefined") return false
-  if ((window as TgWindow).Telegram?.WebApp) return true
+  if ((window as TgWindow).Telegram?.WebApp) {
+    sessionStorage.setItem("tg_context", "1")
+    return true
+  }
 
   const params = new URLSearchParams(window.location.search)
-  if (params.has("tgWebAppData") || params.has("tgWebAppVersion")) return true
-  for (const key of params.keys()) {
-    if (key.startsWith("tgWebApp")) return true
+  if (params.has("tgWebAppData") || params.has("tgWebAppVersion")) {
+    sessionStorage.setItem("tg_context", "1")
+    return true
   }
+  for (const key of params.keys()) {
+    if (key.startsWith("tgWebApp")) {
+      sessionStorage.setItem("tg_context", "1")
+      return true
+    }
+  }
+  if (sessionStorage.getItem("tg_context") === "1") return true
+  if (/Telegram/i.test(navigator.userAgent)) return true
   return false
+}
+
+function parseUserIdFromInitData(initData: string | undefined): string | null {
+  if (!initData) return null
+  try {
+    const params = new URLSearchParams(initData)
+    const rawUser = params.get("user")
+    if (!rawUser) return null
+    const parsed = JSON.parse(rawUser) as { id?: number | string }
+    if (parsed.id == null) return null
+    return String(parsed.id)
+  } catch {
+    return null
+  }
+}
+
+function parseUserIdFromUrl(): string | null {
+  if (typeof window === "undefined") return null
+  const params = new URLSearchParams(window.location.search)
+  const tgWebAppData = params.get("tgWebAppData")
+  if (!tgWebAppData) return null
+  return parseUserIdFromInitData(tgWebAppData)
 }
 
 function getUserIdStrict(): StrictIdentity {
   if (typeof window === "undefined") return { id: null, source: "telegram_no_id" }
   const tg = (window as TgWindow).Telegram?.WebApp
 
-  if (tg && tg.initDataUnsafe?.user?.id) {
+  const directId = tg?.initDataUnsafe?.user?.id
+  if (directId != null) {
     return {
-      id: String(tg.initDataUnsafe.user.id),
+      id: String(directId),
+      source: "telegram",
+    }
+  }
+
+  const parsedFromInitData = parseUserIdFromInitData(tg?.initData)
+  if (parsedFromInitData) {
+    return {
+      id: parsedFromInitData,
+      source: "telegram",
+    }
+  }
+
+  const parsedFromUrl = parseUserIdFromUrl()
+  if (parsedFromUrl) {
+    return {
+      id: parsedFromUrl,
       source: "telegram",
     }
   }
