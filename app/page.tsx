@@ -467,34 +467,76 @@ export default function Home() {
       }
     })
 
-    const { data: progressRows, error: progressErr } = await supabase
-      .from("user_exercise_progress")
-      .select("day_exercise_id,done,local_date")
+    type BreakdownRow = {
+      local_date?: string | null
+      reps_done?: number | null
+      exercise_name?: string | null
+      catalog_exercise_id?: number | null
+      day_exercise_id?: string | null
+    }
+    let breakdownRows: BreakdownRow[] = []
+    const fullBreakdownQuery = await supabase
+      .from("user_day_history_exercises")
+      .select("local_date,reps_done,exercise_name,catalog_exercise_id,day_exercise_id")
       .eq("user_id", uid)
-    if (progressErr) throw new Error(progressErr.message)
-    if (!progressRows || progressRows.length === 0) return { totalStars: 0, streakStars: 0 }
+    if (fullBreakdownQuery.error) {
+      const fallbackQuery = await supabase
+        .from("user_day_history_exercises")
+        .select("local_date,reps_done,exercise_name")
+        .eq("user_id", uid)
+      if (fallbackQuery.error) throw new Error(fallbackQuery.error.message)
+      breakdownRows = (fallbackQuery.data as BreakdownRow[]) ?? []
+    } else {
+      breakdownRows = (fullBreakdownQuery.data as BreakdownRow[]) ?? []
+    }
+    if (breakdownRows.length === 0) return { totalStars: 0, streakStars: 0 }
 
-    const dayExerciseIds = Array.from(new Set(progressRows.map((r) => String(r.day_exercise_id)).filter(Boolean)))
-    const { data: dayExerciseRows, error: dayExerciseErr } = await supabase
-      .from("day_exercises")
-      .select("id,catalog_exercise_id")
-      .in("id", dayExerciseIds)
-    if (dayExerciseErr) throw new Error(dayExerciseErr.message)
-    if (!dayExerciseRows || dayExerciseRows.length === 0) return { totalStars: 0, streakStars: 0 }
-
+    const dayExerciseIds = Array.from(
+      new Set(
+        breakdownRows
+          .map((r) => String(r.day_exercise_id ?? ""))
+          .filter((id) => id.length > 0)
+      )
+    )
     const dayCatalogMap = new Map<string, number>()
-    dayExerciseRows.forEach((r) => {
-      const catalogId = Number((r as { catalog_exercise_id?: number | null }).catalog_exercise_id)
-      if (Number.isFinite(catalogId)) dayCatalogMap.set(String(r.id), catalogId)
+    if (dayExerciseIds.length > 0) {
+      const { data: dayExerciseRows, error: dayExerciseErr } = await supabase
+        .from("day_exercises")
+        .select("id,catalog_exercise_id")
+        .in("id", dayExerciseIds)
+      if (dayExerciseErr) throw new Error(dayExerciseErr.message)
+      ;(dayExerciseRows ?? []).forEach((r) => {
+        const catalogId = Number((r as { catalog_exercise_id?: number | null }).catalog_exercise_id)
+        if (Number.isFinite(catalogId)) dayCatalogMap.set(String(r.id), catalogId)
+      })
+    }
+
+    const catalogIdByLabel = new Map<string, number>()
+    Object.entries(catalogMap).forEach(([id, meta]) => {
+      catalogIdByLabel.set(meta.label.toLowerCase(), Number(id))
     })
 
     const streakSet = new Set(streakDates)
     let total = 0
     let streak = 0
-    progressRows.forEach((row) => {
-      const catalogId = dayCatalogMap.get(String(row.day_exercise_id))
-      const weight = catalogId != null ? catalogMap[catalogId]?.weight ?? 0 : 0
-      const value = (Number(row.done) || 0) * weight
+    breakdownRows.forEach((row) => {
+      const done = Number(row.reps_done) || 0
+      if (done <= 0) return
+
+      let catalogId: number | null = null
+      const directCatalogId = Number(row.catalog_exercise_id)
+      if (Number.isFinite(directCatalogId)) {
+        catalogId = directCatalogId
+      } else if (row.day_exercise_id) {
+        catalogId = dayCatalogMap.get(String(row.day_exercise_id)) ?? null
+      } else if (row.exercise_name) {
+        catalogId = catalogIdByLabel.get(String(row.exercise_name).toLowerCase()) ?? null
+      }
+
+      const weight = catalogId != null ? Number(catalogMap[catalogId]?.weight) : 0
+      if (!Number.isFinite(weight) || weight <= 0) return
+
+      const value = Math.floor(done / weight)
       total += value
       if (streakSet.has(String(row.local_date ?? ""))) streak += value
     })
@@ -1130,26 +1172,44 @@ export default function Home() {
       exercise_name: ex.name,
       reps_done: progress[ex.id] || 0,
       reps_target: ex.target_reps,
+      day_exercise_id: ex.id,
+      catalog_exercise_id: ex.catalog_exercise_id ?? null,
     }))
 
     const { error: berr } = await supabase
       .from("user_day_history_exercises")
       .upsert(breakdownRows, { onConflict: "user_id,program_id,day_number,exercise_name" })
     if (berr) {
-      const { error: bdelErr } = await supabase
+      const legacyBreakdownRows = exercises.map((ex) => ({
+        user_id: uid,
+        program_id: programId,
+        day_number: day,
+        local_date: entryDate,
+        exercise_name: ex.name,
+        reps_done: progress[ex.id] || 0,
+        reps_target: ex.target_reps,
+      }))
+      const { error: legacyUpsertErr } = await supabase
         .from("user_day_history_exercises")
-        .delete()
-        .eq("user_id", uid)
-        .eq("program_id", programId)
-        .eq("day_number", day)
-      if (bdelErr) {
-        setDbg("ERROR breakdown save: " + bdelErr.message)
-        return
-      }
-      const { error: binsErr } = await supabase.from("user_day_history_exercises").insert(breakdownRows)
-      if (binsErr) {
-        setDbg("ERROR breakdown save: " + binsErr.message)
-        return
+        .upsert(legacyBreakdownRows, { onConflict: "user_id,program_id,day_number,exercise_name" })
+      if (!legacyUpsertErr) {
+        // continue next day flow with legacy schema
+      } else {
+        const { error: bdelErr } = await supabase
+          .from("user_day_history_exercises")
+          .delete()
+          .eq("user_id", uid)
+          .eq("program_id", programId)
+          .eq("day_number", day)
+        if (bdelErr) {
+          setDbg("ERROR breakdown save: " + legacyUpsertErr.message)
+          return
+        }
+        const { error: binsErr } = await supabase.from("user_day_history_exercises").insert(legacyBreakdownRows)
+        if (binsErr) {
+          setDbg("ERROR breakdown save: " + binsErr.message)
+          return
+        }
       }
     }
 
