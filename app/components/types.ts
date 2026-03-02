@@ -5,6 +5,7 @@ export type Exercise = {
   sort_order: number
   catalog_exercise_id?: number | null
   unit?: "reps" | "steps"
+  weight?: number | null
 }
 
 export type HistoryEntry = {

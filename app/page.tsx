@@ -370,16 +370,50 @@ export default function Home() {
     if (rows.length === 0) return 0
 
     const ids = Array.from(new Set(rows.map((r) => r.day_exercise_id)))
+    const weightMap = new Map<string, number>()
     const { data: weightRows, error: weightErr } = await supabase
       .from("day_exercises")
-      .select("id,weight")
+      .select("id,weight,catalog_exercise_id")
       .in("id", ids)
-    if (weightErr) throw new Error(weightErr.message)
 
-    const weightMap = new Map<string, number>()
-    weightRows?.forEach((r) => {
-      weightMap.set(String(r.id), Number(r.weight) || 1)
-    })
+    if (!weightErr && weightRows) {
+      weightRows.forEach((r) => {
+        weightMap.set(String(r.id), Number((r as { weight?: number }).weight) || 1)
+      })
+    } else {
+      const { data: noWeightRows, error: noWeightErr } = await supabase
+        .from("day_exercises")
+        .select("id,catalog_exercise_id")
+        .in("id", ids)
+      if (noWeightErr) throw new Error(noWeightErr.message)
+
+      const catalogIds = Array.from(
+        new Set(
+          (noWeightRows ?? [])
+            .map((r) => Number((r as { catalog_exercise_id?: number | null }).catalog_exercise_id))
+            .filter((v) => Number.isFinite(v))
+        )
+      )
+
+      const catalogWeightMap = new Map<number, number>()
+      if (catalogIds.length > 0) {
+        const { data: catalogRows, error: catalogErr } = await supabase
+          .from("exercise_catalog")
+          .select("id,weight")
+          .in("id", catalogIds)
+        if (catalogErr) throw new Error(catalogErr.message)
+        catalogRows?.forEach((r) => {
+          catalogWeightMap.set(Number(r.id), Number(r.weight) || 1)
+        })
+      }
+
+      ;(noWeightRows ?? []).forEach((r) => {
+        const rowId = String((r as { id: string | number }).id)
+        const catalogId = Number((r as { catalog_exercise_id?: number | null }).catalog_exercise_id)
+        const weight = Number.isFinite(catalogId) ? catalogWeightMap.get(catalogId) ?? 1 : 1
+        weightMap.set(rowId, weight)
+      })
+    }
 
     const total = rows.reduce((sum, row) => sum + row.done * (weightMap.get(row.day_exercise_id) ?? 1), 0)
     return roundStars(total)
@@ -447,17 +481,26 @@ export default function Home() {
     let exList: Exercise[] = []
     const { data: exs, error: exerr } = await supabase
       .from("day_exercises")
-      .select("id,name,target_reps,sort_order,catalog_exercise_id")
+      .select("id,name,target_reps,sort_order,catalog_exercise_id,weight")
       .eq("program_day_id", pd.id)
       .order("sort_order")
 
     if (exerr) {
-      setDbg("ERROR day_exercises: " + exerr.message)
-      setExercises([])
-      setProgress({})
-      return
+      const { data: exsFallback, error: exerrFallback } = await supabase
+        .from("day_exercises")
+        .select("id,name,target_reps,sort_order,catalog_exercise_id")
+        .eq("program_day_id", pd.id)
+        .order("sort_order")
+      if (exerrFallback) {
+        setDbg("ERROR day_exercises: " + exerrFallback.message)
+        setExercises([])
+        setProgress({})
+        return
+      }
+      exList = (exsFallback as Exercise[]) ?? []
+    } else {
+      exList = (exs as Exercise[]) ?? []
     }
-    exList = (exs as Exercise[]) ?? []
 
     const catalogIds = Array.from(
       new Set(
@@ -490,21 +533,37 @@ export default function Home() {
     }
 
     const ids = exList.map((x) => x.id)
-    const { data: prog, error: prerr } = await supabase
+    const today = localISODate()
+    const { data: progDone, error: prerrDone } = await supabase
+      .from("user_exercise_progress")
+      .select("day_exercise_id,done")
+      .eq("user_id", uid)
+      .eq("local_date", today)
+      .in("day_exercise_id", ids)
+
+    const map: Record<string, number> = {}
+    if (!prerrDone && progDone) {
+      progDone.forEach((p) => {
+        map[String(p.day_exercise_id)] = Number(p.done) || 0
+      })
+      setProgress(map)
+      return
+    }
+
+    const { data: progReps, error: prerrReps } = await supabase
       .from("user_exercise_progress")
       .select("day_exercise_id,reps_done")
       .eq("user_id", uid)
       .in("day_exercise_id", ids)
 
-    if (prerr) {
-      setDbg("ERROR progress load: " + prerr.message)
+    if (prerrReps) {
+      setDbg("ERROR progress load: " + prerrReps.message)
       setProgress({})
       return
     }
 
-    const map: Record<string, number> = {}
-    prog?.forEach((p) => {
-      map[p.day_exercise_id] = p.reps_done
+    progReps?.forEach((p) => {
+      map[String(p.day_exercise_id)] = Number(p.reps_done) || 0
     })
     setProgress(map)
   }
@@ -779,11 +838,30 @@ export default function Home() {
 
     setProgress((prev) => ({ ...prev, [id]: updated }))
 
+    const entryDate = localISODate()
     const { error } = await supabase
       .from("user_exercise_progress")
-      .upsert({ user_id: uid, day_exercise_id: id, reps_done: updated })
+      .upsert(
+        { user_id: uid, local_date: entryDate, day_exercise_id: id, done: updated },
+        { onConflict: "user_id,day_exercise_id,local_date" }
+      )
 
-    if (error) setDbg("ERROR save progress: " + error.message)
+    if (error) {
+      const { error: fallbackErr } = await supabase
+        .from("user_exercise_progress")
+        .delete()
+        .eq("user_id", uid)
+        .eq("day_exercise_id", id)
+        .eq("local_date", entryDate)
+      if (!fallbackErr) {
+        const { error: insertErr } = await supabase
+          .from("user_exercise_progress")
+          .insert({ user_id: uid, local_date: entryDate, day_exercise_id: id, done: updated })
+        if (insertErr) setDbg("ERROR save progress: " + insertErr.message)
+      } else {
+        setDbg("ERROR save progress: " + error.message)
+      }
+    }
   }
 
   const addCustomReps = async (id: string, target: number) => {
@@ -851,15 +929,18 @@ export default function Home() {
     const totalTarget = exercises.reduce((s, ex) => s + ex.target_reps, 0)
 
     // 1) write totals history
-    const { error: herr } = await supabase.from("user_day_history").upsert({
-      user_id: uid,
-      program_id: programId,
-      day_number: day,
-      local_date: entryDate,
-      total_done: totalDone,
-      total_target: totalTarget,
-      skipped: force,
-    })
+    const { error: herr } = await supabase.from("user_day_history").upsert(
+      {
+        user_id: uid,
+        program_id: programId,
+        day_number: day,
+        local_date: entryDate,
+        total_done: totalDone,
+        total_target: totalTarget,
+        skipped: force,
+      },
+      { onConflict: "user_id,program_id,day_number" }
+    )
 
     if (herr) {
       setDbg("ERROR history save: " + herr.message)
@@ -915,19 +996,7 @@ export default function Home() {
       return
     }
 
-    // 3) clear progress for old day exercises
-    const ids = exercises.map((e) => e.id)
-    if (ids.length) {
-      const { error: derr } = await supabase
-        .from("user_exercise_progress")
-        .delete()
-        .eq("user_id", uid)
-        .in("day_exercise_id", ids)
-
-      if (derr) setDbg("ERROR clear progress: " + derr.message)
-    }
-
-    // 4) move to next day + load
+    // 3) move to next day + load
     const next = day + 1
     setDay(next)
     setProgress({})
