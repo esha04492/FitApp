@@ -9,7 +9,7 @@ import TodayView from "./components/TodayView"
 import StatsView from "./components/StatsView"
 import LeaderboardView from "./components/LeaderboardView"
 import TabBar from "./components/TabBar"
-import { clamp, computeStreaks, diffDays, localISODate } from "./lib/date"
+import { clamp, computeStreaks, localISODate } from "./lib/date"
 import { loadExerciseCatalog } from "./lib/catalog"
 const PROGRAM_NAME = "100 days v.2"
 
@@ -347,9 +347,8 @@ export default function Home() {
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [historyByExercise, setHistoryByExercise] = useState<Record<string, number>>({})
   const [myTotalStars, setMyTotalStars] = useState(0)
-  const [myStreakStars, setMyStreakStars] = useState(0)
   const [leaderboardRows, setLeaderboardRows] = useState<
-    Array<{ rank: number; userId: string; label: string; totalStars: number; streakStars: number }>
+    Array<{ rank: number; userId: string; label: string; totalUnits: number }>
   >([])
   const [leaderboardLoading, setLeaderboardLoading] = useState(false)
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null)
@@ -420,7 +419,6 @@ export default function Home() {
     setHistoryByExercise(map)
   }
 
-  const roundStars = (value: number) => Math.round(value * 10) / 10
   const ensureCatalogMeta = async () => {
     if (Object.keys(catalogMetaById).length > 0) return catalogMetaById
     const result = await loadExerciseCatalog()
@@ -438,109 +436,15 @@ export default function Home() {
     return map
   }
 
-  const computeStars = async (uid: string): Promise<{ totalStars: number; streakStars: number }> => {
-    const catalogMap = await ensureCatalogMeta()
-    const { data: historyRows, error: historyErr } = await supabase
-      .from("user_day_history")
-      .select("local_date,skipped")
-      .eq("user_id", uid)
-      .order("local_date", { ascending: true })
-    if (historyErr) throw new Error(historyErr.message)
-
-    let streakDates: string[] = []
-    ;(historyRows ?? []).forEach((r) => {
-      const date = String(r.local_date ?? "")
-      if (!date) return
-      if (r.skipped) {
-        streakDates = []
-        return
-      }
-      if (streakDates.length === 0) {
-        streakDates = [date]
-        return
-      }
-      const prevDate = streakDates[streakDates.length - 1]
-      if (diffDays(date, prevDate) === 1) {
-        streakDates.push(date)
-      } else {
-        streakDates = [date]
-      }
-    })
-
-    type BreakdownRow = {
-      local_date?: string | null
-      reps_done?: number | null
-      exercise_name?: string | null
-      catalog_exercise_id?: number | null
-      day_exercise_id?: string | null
-    }
-    let breakdownRows: BreakdownRow[] = []
-    const fullBreakdownQuery = await supabase
+  const computeTotalUnits = async (uid: string): Promise<number> => {
+    type BreakdownRow = { reps_done?: number | null }
+    const { data, error } = await supabase
       .from("user_day_history_exercises")
-      .select("local_date,reps_done,exercise_name,catalog_exercise_id,day_exercise_id")
+      .select("reps_done")
       .eq("user_id", uid)
-    if (fullBreakdownQuery.error) {
-      const fallbackQuery = await supabase
-        .from("user_day_history_exercises")
-        .select("local_date,reps_done,exercise_name")
-        .eq("user_id", uid)
-      if (fallbackQuery.error) throw new Error(fallbackQuery.error.message)
-      breakdownRows = (fallbackQuery.data as BreakdownRow[]) ?? []
-    } else {
-      breakdownRows = (fullBreakdownQuery.data as BreakdownRow[]) ?? []
-    }
-    if (breakdownRows.length === 0) return { totalStars: 0, streakStars: 0 }
-
-    const dayExerciseIds = Array.from(
-      new Set(
-        breakdownRows
-          .map((r) => String(r.day_exercise_id ?? ""))
-          .filter((id) => id.length > 0)
-      )
-    )
-    const dayCatalogMap = new Map<string, number>()
-    if (dayExerciseIds.length > 0) {
-      const { data: dayExerciseRows, error: dayExerciseErr } = await supabase
-        .from("day_exercises")
-        .select("id,catalog_exercise_id")
-        .in("id", dayExerciseIds)
-      if (dayExerciseErr) throw new Error(dayExerciseErr.message)
-      ;(dayExerciseRows ?? []).forEach((r) => {
-        const catalogId = Number((r as { catalog_exercise_id?: number | null }).catalog_exercise_id)
-        if (Number.isFinite(catalogId)) dayCatalogMap.set(String(r.id), catalogId)
-      })
-    }
-
-    const catalogIdByLabel = new Map<string, number>()
-    Object.entries(catalogMap).forEach(([id, meta]) => {
-      catalogIdByLabel.set(meta.label.toLowerCase(), Number(id))
-    })
-
-    const streakSet = new Set(streakDates)
-    let total = 0
-    let streak = 0
-    breakdownRows.forEach((row) => {
-      const done = Number(row.reps_done) || 0
-      if (done <= 0) return
-
-      let catalogId: number | null = null
-      const directCatalogId = Number(row.catalog_exercise_id)
-      if (Number.isFinite(directCatalogId)) {
-        catalogId = directCatalogId
-      } else if (row.day_exercise_id) {
-        catalogId = dayCatalogMap.get(String(row.day_exercise_id)) ?? null
-      } else if (row.exercise_name) {
-        catalogId = catalogIdByLabel.get(String(row.exercise_name).toLowerCase()) ?? null
-      }
-
-      const weight = catalogId != null ? Number(catalogMap[catalogId]?.weight) : 0
-      if (!Number.isFinite(weight) || weight <= 0) return
-
-      const value = Math.floor(done / weight)
-      total += value
-      if (streakSet.has(String(row.local_date ?? ""))) streak += value
-    })
-    return { totalStars: roundStars(total), streakStars: roundStars(streak) }
+    if (error) throw new Error(error.message)
+    const total = ((data as BreakdownRow[]) ?? []).reduce((sum, row) => sum + (Number(row.reps_done) || 0), 0)
+    return total
   }
 
   const loadLeaderboard = async (uid: string) => {
@@ -548,9 +452,8 @@ export default function Home() {
     setLeaderboardError(null)
     setLeaderboardDisplayNameError(null)
     try {
-      const mine = await computeStars(uid)
-      setMyTotalStars(mine.totalStars)
-      setMyStreakStars(mine.streakStars)
+      const mine = await computeTotalUnits(uid)
+      setMyTotalStars(mine)
 
       const { data: stateRows, error: stateErr } = await supabase.from("user_state").select("user_id")
       if (stateErr) throw new Error(stateErr.message)
@@ -607,22 +510,21 @@ export default function Home() {
       setShowLeaderboardNameForm(displayNameColumnMissing ? true : !currentUserDisplayName)
       if (currentUserDisplayName) setLeaderboardDisplayName(currentUserDisplayName)
 
-      const starsPairs = await Promise.all(
+      const totalPairs = await Promise.all(
         userIds.map(async (userId) => {
-          const stars = await computeStars(userId)
-          return { userId, ...stars }
+          const totalUnits = await computeTotalUnits(userId)
+          return { userId, totalUnits }
         })
       )
 
-      const sorted = starsPairs.sort((a, b) => b.totalStars - a.totalStars).slice(0, 20)
+      const sorted = totalPairs.sort((a, b) => b.totalUnits - a.totalUnits).slice(0, 20)
       const rows = sorted.map((item, idx) => {
         const label = displayNameMap.get(item.userId) ?? `User ${item.userId.slice(-4)}`
         return {
           rank: idx + 1,
           userId: item.userId,
           label,
-          totalStars: item.totalStars,
-          streakStars: item.streakStars,
+          totalUnits: item.totalUnits,
         }
       })
       setLeaderboardRows(rows)
@@ -826,31 +728,11 @@ export default function Home() {
     setLeaderboardDisplayNameError(null)
     const now = new Date().toISOString()
 
-    const attempts: Array<{ payload: Record<string, unknown>; onConflict: string }> = [
-      {
-        payload: { user_id: uid, display_name: value, updated_at: now },
-        onConflict: "user_id",
-      },
-      {
-        payload: { telegram_id: uid, user_id: uid, display_name: value, updated_at: now },
-        onConflict: "telegram_id",
-      },
-    ]
-
-    let ok = false
-    let message = "Save failed"
-    for (const attempt of attempts) {
-      const { error } = await supabase.from("telegram_users").upsert(attempt.payload, {
-        onConflict: attempt.onConflict,
-      })
-      if (!error) {
-        ok = true
-        break
-      }
-      message = error.message?.includes("display_name") ? "display_name column missing" : error.message
-    }
-
-    if (!ok) {
+    const { error } = await supabase
+      .from("telegram_users")
+      .upsert({ user_id: uid, display_name: value, updated_at: now }, { onConflict: "user_id" })
+    if (error) {
+      const message = error.message?.includes("display_name") ? "display_name column missing" : error.message
       setLeaderboardDisplayNameError(message)
       setLeaderboardDisplayNameSaving(false)
       return
@@ -1436,7 +1318,6 @@ export default function Home() {
               setHistory([])
               setHistoryByExercise({})
               setMyTotalStars(0)
-              setMyStreakStars(0)
               setLeaderboardRows([])
               setShowLeaderboardNameForm(false)
               setLeaderboardDisplayName("")
@@ -1449,7 +1330,6 @@ export default function Home() {
         ) : (
           <LeaderboardView
             myTotalStars={myTotalStars}
-            myStreakStars={myStreakStars}
             rows={leaderboardRows}
             loading={leaderboardLoading}
             error={leaderboardError}

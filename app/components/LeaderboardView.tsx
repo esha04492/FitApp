@@ -4,13 +4,11 @@ type LeaderboardRow = {
   rank: number
   userId: string
   label: string
-  totalStars: number
-  streakStars: number
+  totalUnits: number
 }
 
 export default function LeaderboardView(props: {
   myTotalStars: number
-  myStreakStars: number
   rows: LeaderboardRow[]
   loading: boolean
   error: string | null
@@ -23,7 +21,6 @@ export default function LeaderboardView(props: {
 }) {
   const {
     myTotalStars,
-    myStreakStars,
     rows,
     loading,
     error,
@@ -39,12 +36,11 @@ export default function LeaderboardView(props: {
     <>
       <div className="mb-7 text-center">
         <div className="text-sm text-neutral-400">Leaderboard</div>
-        <div className="mt-1 text-3xl font-semibold tracking-tight">Stars</div>
+        <div className="mt-1 text-3xl font-semibold tracking-tight">Total units</div>
 
         <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 backdrop-blur text-left">
-          <div className="text-xs text-amber-300/90">Total stars</div>
-          <div className="mt-1 text-3xl font-semibold tabular-nums text-amber-200">{myTotalStars.toFixed(1)}</div>
-          <div className="mt-1 text-xs text-amber-300/80">Streak stars: {myStreakStars.toFixed(1)}</div>
+          <div className="text-xs text-amber-300/90">Total units</div>
+          <div className="mt-1 text-3xl font-semibold tabular-nums text-amber-200">{myTotalStars.toLocaleString("en-US")}</div>
         </div>
       </div>
 
@@ -119,8 +115,7 @@ export default function LeaderboardView(props: {
                       {row.label}
                     </div>
                     <div className="text-right">
-                      <div className="text-sm font-semibold tabular-nums text-amber-200">{row.totalStars.toFixed(1)}</div>
-                      <div className="text-[11px] text-neutral-400">Streak {row.streakStars.toFixed(1)}</div>
+                      <div className="text-sm font-semibold tabular-nums text-amber-200">{row.totalUnits.toLocaleString("en-US")}</div>
                     </div>
                   </div>
                 ))
