@@ -6,6 +6,7 @@ export type Exercise = {
   catalog_exercise_id?: number | null
   unit?: "reps" | "steps"
   weight?: number | null
+  default_target?: number | null
 }
 
 export type HistoryEntry = {

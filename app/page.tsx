@@ -9,7 +9,7 @@ import TodayView from "./components/TodayView"
 import StatsView from "./components/StatsView"
 import LeaderboardView from "./components/LeaderboardView"
 import TabBar from "./components/TabBar"
-import { clamp, computeStreaks, diffDays, localISODate } from "./lib/date"
+import { clamp, computeStreaks, localISODate } from "./lib/date"
 const PROGRAM_NAME = "100 days v.2"
 
 type TgWindow = Window & {
@@ -341,113 +341,65 @@ export default function Home() {
   const roundStars = (value: number) => Math.round(value * 10) / 10
 
   const computeTotalStars = async (uid: string): Promise<number> => {
-    const { data: doneRows, error: doneErr } = await supabase
-      .from("user_exercise_progress")
-      .select("day_exercise_id,done,local_date")
-      .eq("user_id", uid)
-
-    let rows: Array<{ day_exercise_id: string; done: number; local_date: string }> = []
-
-    if (doneErr) {
-      const { data: repsRows, error: repsErr } = await supabase
-        .from("user_exercise_progress")
-        .select("day_exercise_id,reps_done,local_date")
-        .eq("user_id", uid)
-      if (repsErr) throw new Error(repsErr.message)
-      rows =
-        repsRows?.map((r) => ({
-          day_exercise_id: String(r.day_exercise_id),
-          done: Number(r.reps_done) || 0,
-          local_date: String(r.local_date ?? ""),
-        })) ?? []
-    } else {
-      rows =
-        doneRows?.map((r) => ({
-          day_exercise_id: String(r.day_exercise_id),
-          done: Number(r.done) || 0,
-          local_date: String(r.local_date ?? ""),
-        })) ?? []
-    }
-
-    if (rows.length === 0) return 0
-
     const { data: historyRows, error: historyErr } = await supabase
       .from("user_day_history")
-      .select("local_date,skipped")
+      .select("program_id,day_number,skipped")
       .eq("user_id", uid)
-      .order("local_date", { ascending: true })
+      .order("day_number", { ascending: true })
     if (historyErr) throw new Error(historyErr.message)
 
-    let streakDates: string[] = []
+    let streakProgramId: string | number | null = null
+    let streakDayNumbers: number[] = []
     ;(historyRows ?? []).forEach((r) => {
-      const date = String(r.local_date ?? "")
-      if (!date) return
+      const programId = r.program_id as string | number | null
+      const dayNumber = Number(r.day_number) || 0
+      if (!programId || dayNumber <= 0) return
       if (r.skipped) {
-        streakDates = []
+        streakProgramId = null
+        streakDayNumbers = []
         return
       }
-      if (streakDates.length === 0) {
-        streakDates = [date]
+      if (streakProgramId == null) {
+        streakProgramId = programId
+        streakDayNumbers = [dayNumber]
         return
       }
-      const prev = streakDates[streakDates.length - 1]
-      if (diffDays(date, prev) === 1) {
-        streakDates.push(date)
+      const prevDay = streakDayNumbers[streakDayNumbers.length - 1]
+      if (programId === streakProgramId && dayNumber === prevDay + 1) {
+        streakDayNumbers.push(dayNumber)
       } else {
-        streakDates = [date]
+        streakProgramId = programId
+        streakDayNumbers = [dayNumber]
       }
     })
-    const streakSet = new Set(streakDates)
-    rows = rows.filter((r) => streakSet.has(r.local_date))
-    if (rows.length === 0) return 0
 
-    const ids = Array.from(new Set(rows.map((r) => r.day_exercise_id)))
-    const weightMap = new Map<string, number>()
-    const { data: weightRows, error: weightErr } = await supabase
-      .from("day_exercises")
-      .select("id,weight,catalog_exercise_id")
-      .in("id", ids)
+    if (streakProgramId == null || streakDayNumbers.length === 0) return 0
 
-    if (!weightErr && weightRows) {
-      weightRows.forEach((r) => {
-        weightMap.set(String(r.id), Number((r as { weight?: number }).weight) || 1)
-      })
-    } else {
-      const { data: noWeightRows, error: noWeightErr } = await supabase
-        .from("day_exercises")
-        .select("id,catalog_exercise_id")
-        .in("id", ids)
-      if (noWeightErr) throw new Error(noWeightErr.message)
+    const { data: breakdownRows, error: breakdownErr } = await supabase
+      .from("user_day_history_exercises")
+      .select("exercise_name,reps_done")
+      .eq("user_id", uid)
+      .eq("program_id", streakProgramId)
+      .in("day_number", streakDayNumbers)
+    if (breakdownErr) throw new Error(breakdownErr.message)
+    if (!breakdownRows || breakdownRows.length === 0) return 0
 
-      const catalogIds = Array.from(
-        new Set(
-          (noWeightRows ?? [])
-            .map((r) => Number((r as { catalog_exercise_id?: number | null }).catalog_exercise_id))
-            .filter((v) => Number.isFinite(v))
-        )
-      )
+    const names = Array.from(new Set(breakdownRows.map((r) => String(r.exercise_name)).filter(Boolean)))
+    const { data: catalogRows, error: catalogErr } = await supabase
+      .from("exercise_catalog")
+      .select("label,weight")
+      .in("label", names)
+    if (catalogErr) throw new Error(catalogErr.message)
 
-      const catalogWeightMap = new Map<number, number>()
-      if (catalogIds.length > 0) {
-        const { data: catalogRows, error: catalogErr } = await supabase
-          .from("exercise_catalog")
-          .select("id,weight")
-          .in("id", catalogIds)
-        if (catalogErr) throw new Error(catalogErr.message)
-        catalogRows?.forEach((r) => {
-          catalogWeightMap.set(Number(r.id), Number(r.weight) || 1)
-        })
-      }
+    const weightByName = new Map<string, number>()
+    catalogRows?.forEach((r) => {
+      weightByName.set(String(r.label), Number(r.weight) || 1)
+    })
 
-      ;(noWeightRows ?? []).forEach((r) => {
-        const rowId = String((r as { id: string | number }).id)
-        const catalogId = Number((r as { catalog_exercise_id?: number | null }).catalog_exercise_id)
-        const weight = Number.isFinite(catalogId) ? catalogWeightMap.get(catalogId) ?? 1 : 1
-        weightMap.set(rowId, weight)
-      })
-    }
-
-    const total = rows.reduce((sum, row) => sum + row.done * (weightMap.get(row.day_exercise_id) ?? 1), 0)
+    const total = breakdownRows.reduce(
+      (sum, row) => sum + (Number(row.reps_done) || 0) * (weightByName.get(String(row.exercise_name)) ?? 1),
+      0
+    )
     return roundStars(total)
   }
 
@@ -543,21 +495,21 @@ export default function Home() {
     )
     const nameList = Array.from(new Set(exList.map((x) => x.name).filter(Boolean)))
 
-    let catalogRowsById: Array<{ id: number; unit: string; weight: number; label?: string }> = []
+    let catalogRowsById: Array<{ id: number; unit: string; weight: number; default_target: number; label?: string }> = []
     if (catalogIds.length > 0) {
       const { data } = await supabase
         .from("exercise_catalog")
-        .select("id,unit,weight,label")
+        .select("id,unit,weight,default_target,label")
         .in("id", catalogIds)
-      catalogRowsById = (data as Array<{ id: number; unit: string; weight: number; label?: string }>) ?? []
+      catalogRowsById = (data as Array<{ id: number; unit: string; weight: number; default_target: number; label?: string }>) ?? []
     }
-    let catalogRowsByLabel: Array<{ id: number; unit: string; weight: number; label?: string }> = []
+    let catalogRowsByLabel: Array<{ id: number; unit: string; weight: number; default_target: number; label?: string }> = []
     if (nameList.length > 0) {
       const { data } = await supabase
         .from("exercise_catalog")
-        .select("id,unit,weight,label")
+        .select("id,unit,weight,default_target,label")
         .in("label", nameList)
-      catalogRowsByLabel = (data as Array<{ id: number; unit: string; weight: number; label?: string }>) ?? []
+      catalogRowsByLabel = (data as Array<{ id: number; unit: string; weight: number; default_target: number; label?: string }>) ?? []
     }
 
     const byIdUnitMap = new Map<number, "reps" | "steps">(
@@ -569,6 +521,12 @@ export default function Home() {
     )
     const byLabelWeightMap = new Map<string, number>(
       catalogRowsByLabel.map((r) => [String(r.label ?? ""), Number(r.weight) || 1])
+    )
+    const byIdDefaultTargetMap = new Map<number, number>(
+      catalogRowsById.map((r) => [r.id, Number(r.default_target) || 0])
+    )
+    const byLabelDefaultTargetMap = new Map<string, number>(
+      catalogRowsByLabel.map((r) => [String(r.label ?? ""), Number(r.default_target) || 0])
     )
 
     exList = exList.map((row) => ({
@@ -583,6 +541,10 @@ export default function Home() {
           : row.catalog_exercise_id != null
             ? byIdWeightMap.get(row.catalog_exercise_id) ?? byLabelWeightMap.get(row.name)
             : byLabelWeightMap.get(row.name),
+      default_target:
+        row.catalog_exercise_id != null
+          ? byIdDefaultTargetMap.get(row.catalog_exercise_id) ?? byLabelDefaultTargetMap.get(row.name)
+          : byLabelDefaultTargetMap.get(row.name),
     }))
     setExercises(exList)
 
@@ -905,30 +867,34 @@ export default function Home() {
         { onConflict: "user_id,day_exercise_id,local_date" }
       )
 
-    if (error) {
-      const { error: fallbackErr } = await supabase
+    if (!error) return
+
+    const { error: retryUpsertErr } = await supabase
+      .from("user_exercise_progress")
+      .upsert(
+        { user_id: uid, local_date: entryDate, day_exercise_id: id, done: updated },
+        { onConflict: "user_id,day_exercise_id,local_date" }
+      )
+    if (!retryUpsertErr) return
+
+    const { error: fallbackErr } = await supabase
+      .from("user_exercise_progress")
+      .delete()
+      .eq("user_id", uid)
+      .eq("day_exercise_id", id)
+    if (!fallbackErr) {
+      const { error: insertErr } = await supabase
         .from("user_exercise_progress")
-        .delete()
-        .eq("user_id", uid)
-        .eq("day_exercise_id", id)
-      if (!fallbackErr) {
-        const { error: insertErr } = await supabase
-          .from("user_exercise_progress")
-          .insert({ user_id: uid, local_date: entryDate, day_exercise_id: id, done: updated })
-        if (insertErr) {
-          if (insertErr.message?.includes("user_exercise_progress_pkey")) {
-            const { error: retryInsertErr } = await supabase
-              .from("user_exercise_progress")
-              .insert({ user_id: uid, local_date: entryDate, day_exercise_id: id, done: updated })
-            if (retryInsertErr) setDbg("ERROR save progress: " + retryInsertErr.message)
-          } else {
-            setDbg("ERROR save progress: " + insertErr.message)
-          }
-        }
-      } else {
-        setDbg("ERROR save progress: " + error.message)
-      }
+        .insert({ user_id: uid, local_date: entryDate, day_exercise_id: id, done: updated })
+      if (!insertErr) return
+      const { error: retryInsertErr } = await supabase
+        .from("user_exercise_progress")
+        .insert({ user_id: uid, local_date: entryDate, day_exercise_id: id, done: updated })
+      if (!retryInsertErr) return
+      setDbg("ERROR save progress: " + retryInsertErr.message)
+      return
     }
+    setDbg("ERROR save progress: " + retryUpsertErr.message)
   }
 
   const addCustomReps = async (id: string, target: number) => {
