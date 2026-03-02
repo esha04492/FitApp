@@ -9,7 +9,7 @@ import TodayView from "./components/TodayView"
 import StatsView from "./components/StatsView"
 import LeaderboardView from "./components/LeaderboardView"
 import TabBar from "./components/TabBar"
-import { clamp, computeStreaks, localISODate } from "./lib/date"
+import { clamp, computeStreaks, diffDays, localISODate } from "./lib/date"
 const PROGRAM_NAME = "100 days v.2"
 
 type TgWindow = Window & {
@@ -343,61 +343,83 @@ export default function Home() {
   const computeTotalStars = async (uid: string): Promise<number> => {
     const { data: historyRows, error: historyErr } = await supabase
       .from("user_day_history")
-      .select("program_id,day_number,skipped")
+      .select("local_date,skipped")
       .eq("user_id", uid)
-      .order("day_number", { ascending: true })
+      .order("local_date", { ascending: true })
     if (historyErr) throw new Error(historyErr.message)
 
-    let streakProgramId: string | number | null = null
-    let streakDayNumbers: number[] = []
+    let streakDates: string[] = []
     ;(historyRows ?? []).forEach((r) => {
-      const programId = r.program_id as string | number | null
-      const dayNumber = Number(r.day_number) || 0
-      if (!programId || dayNumber <= 0) return
+      const date = String(r.local_date ?? "")
+      if (!date) return
       if (r.skipped) {
-        streakProgramId = null
-        streakDayNumbers = []
+        streakDates = []
         return
       }
-      if (streakProgramId == null) {
-        streakProgramId = programId
-        streakDayNumbers = [dayNumber]
+      if (streakDates.length === 0) {
+        streakDates = [date]
         return
       }
-      const prevDay = streakDayNumbers[streakDayNumbers.length - 1]
-      if (programId === streakProgramId && dayNumber === prevDay + 1) {
-        streakDayNumbers.push(dayNumber)
+      const prevDate = streakDates[streakDates.length - 1]
+      if (diffDays(date, prevDate) === 1) {
+        streakDates.push(date)
       } else {
-        streakProgramId = programId
-        streakDayNumbers = [dayNumber]
+        streakDates = [date]
       }
     })
 
-    if (streakProgramId == null || streakDayNumbers.length === 0) return 0
+    if (streakDates.length === 0) return 0
 
-    const { data: breakdownRows, error: breakdownErr } = await supabase
-      .from("user_day_history_exercises")
-      .select("exercise_name,reps_done")
+    const { data: progressRows, error: progressErr } = await supabase
+      .from("user_exercise_progress")
+      .select("day_exercise_id,done,local_date")
       .eq("user_id", uid)
-      .eq("program_id", streakProgramId)
-      .in("day_number", streakDayNumbers)
-    if (breakdownErr) throw new Error(breakdownErr.message)
-    if (!breakdownRows || breakdownRows.length === 0) return 0
+      .in("local_date", streakDates)
+    if (progressErr) throw new Error(progressErr.message)
+    if (!progressRows || progressRows.length === 0) return 0
 
-    const names = Array.from(new Set(breakdownRows.map((r) => String(r.exercise_name)).filter(Boolean)))
+    const dayExerciseIds = Array.from(
+      new Set(progressRows.map((r) => String(r.day_exercise_id)).filter(Boolean))
+    )
+    const { data: dayExerciseRows, error: dayExerciseErr } = await supabase
+      .from("day_exercises")
+      .select("id,weight,catalog_exercise_id")
+      .in("id", dayExerciseIds)
+    if (dayExerciseErr) throw new Error(dayExerciseErr.message)
+    if (!dayExerciseRows || dayExerciseRows.length === 0) return 0
+
+    const catalogIds = Array.from(
+      new Set(
+        dayExerciseRows
+          .map((r) => Number((r as { catalog_exercise_id?: number | null }).catalog_exercise_id))
+          .filter((v) => Number.isFinite(v))
+      )
+    )
     const { data: catalogRows, error: catalogErr } = await supabase
       .from("exercise_catalog")
-      .select("label,weight")
-      .in("label", names)
+      .select("id,weight")
+      .in("id", catalogIds)
     if (catalogErr) throw new Error(catalogErr.message)
 
-    const weightByName = new Map<string, number>()
-    catalogRows?.forEach((r) => {
-      weightByName.set(String(r.label), Number(r.weight) || 1)
+    const catalogWeightMap = new Map<number, number>()
+    ;(catalogRows ?? []).forEach((r) => {
+      catalogWeightMap.set(Number(r.id), Number(r.weight) || 1)
     })
 
-    const total = breakdownRows.reduce(
-      (sum, row) => sum + (Number(row.reps_done) || 0) * (weightByName.get(String(row.exercise_name)) ?? 1),
+    const dayWeightMap = new Map<string, number>()
+    dayExerciseRows.forEach((r) => {
+      const rowId = String(r.id)
+      const directWeight = Number((r as { weight?: number | null }).weight)
+      if (Number.isFinite(directWeight) && directWeight > 0) {
+        dayWeightMap.set(rowId, directWeight)
+        return
+      }
+      const catalogId = Number((r as { catalog_exercise_id?: number | null }).catalog_exercise_id)
+      dayWeightMap.set(rowId, Number.isFinite(catalogId) ? catalogWeightMap.get(catalogId) ?? 1 : 1)
+    })
+
+    const total = progressRows.reduce(
+      (sum, row) => sum + (Number(row.done) || 0) * (dayWeightMap.get(String(row.day_exercise_id)) ?? 1),
       0
     )
     return roundStars(total)
@@ -867,7 +889,10 @@ export default function Home() {
         { onConflict: "user_id,day_exercise_id,local_date" }
       )
 
-    if (!error) return
+    if (!error) {
+      setDbg((prev) => (prev.startsWith("ERROR save progress:") ? "" : prev))
+      return
+    }
 
     const { error: retryUpsertErr } = await supabase
       .from("user_exercise_progress")
@@ -875,7 +900,10 @@ export default function Home() {
         { user_id: uid, local_date: entryDate, day_exercise_id: id, done: updated },
         { onConflict: "user_id,day_exercise_id,local_date" }
       )
-    if (!retryUpsertErr) return
+    if (!retryUpsertErr) {
+      setDbg((prev) => (prev.startsWith("ERROR save progress:") ? "" : prev))
+      return
+    }
 
     const { error: fallbackErr } = await supabase
       .from("user_exercise_progress")
@@ -886,11 +914,17 @@ export default function Home() {
       const { error: insertErr } = await supabase
         .from("user_exercise_progress")
         .insert({ user_id: uid, local_date: entryDate, day_exercise_id: id, done: updated })
-      if (!insertErr) return
+      if (!insertErr) {
+        setDbg((prev) => (prev.startsWith("ERROR save progress:") ? "" : prev))
+        return
+      }
       const { error: retryInsertErr } = await supabase
         .from("user_exercise_progress")
         .insert({ user_id: uid, local_date: entryDate, day_exercise_id: id, done: updated })
-      if (!retryInsertErr) return
+      if (!retryInsertErr) {
+        setDbg((prev) => (prev.startsWith("ERROR save progress:") ? "" : prev))
+        return
+      }
       if (!retryInsertErr.message?.includes("user_exercise_progress_pkey")) {
         setDbg("ERROR save progress: " + retryInsertErr.message)
       }
