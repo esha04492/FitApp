@@ -11,7 +11,8 @@ import LeaderboardView from "./components/LeaderboardView"
 import TabBar from "./components/TabBar"
 import { clamp, computeStreaks, localISODate } from "./lib/date"
 import { loadExerciseCatalog } from "./lib/catalog"
-const PROGRAM_NAME = "100 days v.2"
+const PROGRAM_NAME = "100 days Advanced"
+const BUILT_IN_PROGRAM_NAMES = [PROGRAM_NAME, "100 days v.2"]
 type Lang = "ru" | "en"
 const I18N: Record<
   Lang,
@@ -860,7 +861,7 @@ export default function Home() {
     const { data: existingBuiltIn, error: existingBuiltInErr } = await supabase
       .from("programs")
       .select("id")
-      .eq("name", PROGRAM_NAME)
+      .in("name", BUILT_IN_PROGRAM_NAMES)
       .is("owner_user_id", null)
       .order("id", { ascending: false })
       .limit(50)
@@ -884,7 +885,7 @@ export default function Home() {
       const { data: anyByName, error: anyByNameErr } = await supabase
         .from("programs")
         .select("id")
-        .eq("name", PROGRAM_NAME)
+        .in("name", BUILT_IN_PROGRAM_NAMES)
         .order("id", { ascending: false })
         .limit(50)
 

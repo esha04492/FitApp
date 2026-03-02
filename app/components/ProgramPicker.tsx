@@ -55,7 +55,7 @@ export default function ProgramPicker(props: {
           onClick={() => setShowConfirm(true)}
           className="w-full rounded-3xl border border-white/10 bg-white/5 p-5 text-left backdrop-blur transition hover:bg-white/10 active:scale-[0.99] disabled:opacity-60"
         >
-          <div className="text-base font-semibold text-neutral-100">100 days v.2</div>
+          <div className="text-base font-semibold text-neutral-100">100 days Advanced</div>
           <div className="mt-1 text-xs text-neutral-400">{labels.builtInSubtitle}</div>
         </button>
 
