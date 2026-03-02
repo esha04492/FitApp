@@ -6,6 +6,7 @@ import type { HistoryEntry } from "./types"
 const RESET_PASSWORD = "0000"
 
 export default function StatsView(props: {
+  lang?: "ru" | "en"
   totalsSplit: { steps: number; others: number }
   day: number
   dayTotals: { pct: number }
@@ -14,7 +15,27 @@ export default function StatsView(props: {
   historyByExercise: Record<string, number>
   onReset: () => void
 }) {
-  const { day, dayTotals, history, stats, historyByExercise, onReset, totalsSplit } = props
+  const { day, dayTotals, history, stats, historyByExercise, onReset, totalsSplit, lang = "ru" } = props
+
+  const trExerciseName = (name: string) => {
+    if (lang !== "ru") return name
+    const key = name.trim().toLowerCase()
+    const map: Record<string, string> = {
+      "push-ups": "Отжимания",
+      pushups: "Отжимания",
+      "pull-ups": "Подтягивания",
+      pullups: "Подтягивания",
+      squats: "Приседания",
+      dips: "Отжимания на брусьях",
+      abs: "Пресс",
+      walking: "Ходьба",
+      lunges: "Выпады",
+      burpees: "Берпи",
+      "jump rope": "Прыжки на скакалке",
+      "mountain climbers": "Скалолаз",
+    }
+    return map[key] ?? name
+  }
 
   const last = useMemo(() => {
     if (history.length === 0) return null
@@ -106,7 +127,7 @@ export default function StatsView(props: {
                     key={name}
                     className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2"
                   >
-                    <div className="text-sm font-semibold">{name}</div>
+                    <div className="text-sm font-semibold">{trExerciseName(name)}</div>
                     <div className="text-sm font-semibold tabular-nums">{reps.toLocaleString("en-US")}</div>
                   </div>
                 ))

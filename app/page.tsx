@@ -1387,7 +1387,7 @@ export default function Home() {
         ) : null}
         {showProgramMenu || programId == null ? (
           showCustomBuilder ? (
-            <CustomProgramBuilder onBack={() => setShowCustomBuilder(false)} onCreate={createCustomProgram} />
+            <CustomProgramBuilder onBack={() => setShowCustomBuilder(false)} onCreate={createCustomProgram} lang={lang} />
           ) : (
             <ProgramPicker
               onPickBuiltIn={chooseBuiltInProgram}
@@ -1427,6 +1427,7 @@ export default function Home() {
           />
         ) : tab === "stats" ? (
           <StatsView
+          lang={lang}
           totalsSplit={totalsSplit}
             day={day}
             dayTotals={dayTotals}

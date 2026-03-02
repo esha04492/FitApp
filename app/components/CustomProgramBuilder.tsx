@@ -13,8 +13,9 @@ export type BuilderExercise = {
 export default function CustomProgramBuilder(props: {
   onBack: () => void
   onCreate: (payload: { name: string; exercises: BuilderExercise[] }) => Promise<{ ok: boolean; error?: string }>
+  lang?: "ru" | "en"
 }) {
-  const { onBack, onCreate } = props
+  const { onBack, onCreate, lang = "ru" } = props
 
   const [programName, setProgramName] = useState("My program")
   const [catalog, setCatalog] = useState<CatalogExercise[]>([])
@@ -31,6 +32,26 @@ export default function CustomProgramBuilder(props: {
   >([{ catalogExerciseId: null, name: "", target: 0, unit: "reps", weight: 1 }])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const trExerciseName = (name: string) => {
+    if (lang !== "ru") return name
+    const key = name.trim().toLowerCase()
+    const map: Record<string, string> = {
+      "push-ups": "Отжимания",
+      pushups: "Отжимания",
+      "pull-ups": "Подтягивания",
+      pullups: "Подтягивания",
+      squats: "Приседания",
+      dips: "Отжимания на брусьях",
+      abs: "Пресс",
+      walking: "Ходьба",
+      lunges: "Выпады",
+      burpees: "Берпи",
+      "jump rope": "Прыжки на скакалке",
+      "mountain climbers": "Скалолаз",
+    }
+    return map[key] ?? name
+  }
 
   useEffect(() => {
     const run = async () => {
@@ -191,7 +212,7 @@ export default function CustomProgramBuilder(props: {
                 <option value="">Select exercise</option>
                 {catalog.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.label}
+                    {trExerciseName(item.label)}
                   </option>
                 ))}
               </select>
