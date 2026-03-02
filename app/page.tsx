@@ -437,77 +437,42 @@ export default function Home() {
   }
 
   const computeTotalStarsByUsers = async (userIds: string[]) => {
-    const catalogMap = await ensureCatalogMeta()
+    const { data: catalogRows, error: catalogErr } = await supabase
+      .from("exercise_catalog")
+      .select("id,weight")
+      .eq("is_active", true)
+    if (catalogErr) throw new Error(catalogErr.message)
+    const weightByCatalogId = new Map<number, number>()
+    ;(catalogRows ?? []).forEach((r) => {
+      const id = Number(r.id)
+      const weight = Number(r.weight)
+      if (Number.isFinite(id)) weightByCatalogId.set(id, weight)
+    })
+
     const totals = new Map<string, number>()
     userIds.forEach((id) => totals.set(id, 0))
     if (userIds.length === 0) return totals
 
     type BreakdownRow = {
       user_id?: string | null
-      done?: number | null
+      reps_done?: number | null
       catalog_exercise_id?: number | null
-      day_exercise_id?: string | null
     }
-
-    const fullQuery = await supabase
+    const { data: breakdownRows, error: breakdownErr } = await supabase
       .from("user_day_history_exercises")
-      .select("user_id,done,catalog_exercise_id,day_exercise_id")
+      .select("user_id,reps_done,catalog_exercise_id")
       .in("user_id", userIds)
+    if (breakdownErr) throw new Error(breakdownErr.message)
 
-    let breakdownRows: BreakdownRow[] = []
-    if (fullQuery.error) {
-      const fallbackQuery = await supabase
-        .from("user_day_history_exercises")
-        .select("user_id,reps_done,catalog_exercise_id,day_exercise_id")
-        .in("user_id", userIds)
-      if (fallbackQuery.error) throw new Error(fallbackQuery.error.message)
-      breakdownRows = ((fallbackQuery.data as Array<BreakdownRow & { reps_done?: number | null }>) ?? []).map((r) => ({
-        user_id: r.user_id,
-        done: Number(r.reps_done) || 0,
-        catalog_exercise_id: r.catalog_exercise_id,
-        day_exercise_id: r.day_exercise_id,
-      }))
-    } else {
-      breakdownRows = (fullQuery.data as BreakdownRow[]) ?? []
-    }
-
-    const dayExerciseIds = Array.from(
-      new Set(
-        breakdownRows
-          .filter((r) => r.catalog_exercise_id == null && r.day_exercise_id)
-          .map((r) => String(r.day_exercise_id))
-      )
-    )
-    const dayCatalogMap = new Map<string, number>()
-    if (dayExerciseIds.length > 0) {
-      const { data: dayRows, error: dayErr } = await supabase
-        .from("day_exercises")
-        .select("id,catalog_exercise_id")
-        .in("id", dayExerciseIds)
-      if (!dayErr) {
-        ;(dayRows ?? []).forEach((r) => {
-          const cid = Number((r as { catalog_exercise_id?: number | null }).catalog_exercise_id)
-          if (Number.isFinite(cid)) dayCatalogMap.set(String(r.id), cid)
-        })
-      }
-    }
-
-    breakdownRows.forEach((row) => {
+    ;((breakdownRows as BreakdownRow[]) ?? []).forEach((row) => {
       const userId = String(row.user_id ?? "")
       if (!userId || !totals.has(userId)) return
-      const done = Number(row.done) || 0
+      const done = Number(row.reps_done) || 0
       if (done <= 0) return
+      const catalogId = Number(row.catalog_exercise_id)
+      if (!Number.isFinite(catalogId)) return
 
-      let catalogId: number | null = null
-      const directCatalogId = Number(row.catalog_exercise_id)
-      if (Number.isFinite(directCatalogId)) {
-        catalogId = directCatalogId
-      } else if (row.day_exercise_id) {
-        catalogId = dayCatalogMap.get(String(row.day_exercise_id)) ?? null
-      }
-      if (catalogId == null) return
-
-      const weight = Number(catalogMap[catalogId]?.weight)
+      const weight = Number(weightByCatalogId.get(catalogId))
       if (!Number.isFinite(weight) || weight <= 0) return
 
       const stars = Math.floor(done / weight)
