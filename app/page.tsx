@@ -9,7 +9,7 @@ import TodayView from "./components/TodayView"
 import StatsView from "./components/StatsView"
 import LeaderboardView from "./components/LeaderboardView"
 import TabBar from "./components/TabBar"
-import { clamp, computeStreaks, localISODate } from "./lib/date"
+import { clamp, computeStreaks, diffDays, localISODate } from "./lib/date"
 const PROGRAM_NAME = "100 days v.2"
 
 type TgWindow = Window & {
@@ -343,30 +343,62 @@ export default function Home() {
   const computeTotalStars = async (uid: string): Promise<number> => {
     const { data: doneRows, error: doneErr } = await supabase
       .from("user_exercise_progress")
-      .select("day_exercise_id,done")
+      .select("day_exercise_id,done,local_date")
       .eq("user_id", uid)
 
-    let rows: Array<{ day_exercise_id: string; done: number }> = []
+    let rows: Array<{ day_exercise_id: string; done: number; local_date: string }> = []
 
     if (doneErr) {
       const { data: repsRows, error: repsErr } = await supabase
         .from("user_exercise_progress")
-        .select("day_exercise_id,reps_done")
+        .select("day_exercise_id,reps_done,local_date")
         .eq("user_id", uid)
       if (repsErr) throw new Error(repsErr.message)
       rows =
         repsRows?.map((r) => ({
           day_exercise_id: String(r.day_exercise_id),
           done: Number(r.reps_done) || 0,
+          local_date: String(r.local_date ?? ""),
         })) ?? []
     } else {
       rows =
         doneRows?.map((r) => ({
           day_exercise_id: String(r.day_exercise_id),
           done: Number(r.done) || 0,
+          local_date: String(r.local_date ?? ""),
         })) ?? []
     }
 
+    if (rows.length === 0) return 0
+
+    const { data: historyRows, error: historyErr } = await supabase
+      .from("user_day_history")
+      .select("local_date,skipped")
+      .eq("user_id", uid)
+      .order("local_date", { ascending: true })
+    if (historyErr) throw new Error(historyErr.message)
+
+    let streakDates: string[] = []
+    ;(historyRows ?? []).forEach((r) => {
+      const date = String(r.local_date ?? "")
+      if (!date) return
+      if (r.skipped) {
+        streakDates = []
+        return
+      }
+      if (streakDates.length === 0) {
+        streakDates = [date]
+        return
+      }
+      const prev = streakDates[streakDates.length - 1]
+      if (diffDays(date, prev) === 1) {
+        streakDates.push(date)
+      } else {
+        streakDates = [date]
+      }
+    })
+    const streakSet = new Set(streakDates)
+    rows = rows.filter((r) => streakSet.has(r.local_date))
     if (rows.length === 0) return 0
 
     const ids = Array.from(new Set(rows.map((r) => r.day_exercise_id)))
@@ -509,22 +541,49 @@ export default function Home() {
           .filter((x): x is number => x != null)
       )
     )
-    if (catalogIds.length > 0) {
-      const { data: catalogRows } = await supabase
-        .from("exercise_catalog")
-        .select("id,unit")
-        .in("id", catalogIds)
+    const nameList = Array.from(new Set(exList.map((x) => x.name).filter(Boolean)))
 
-      if (catalogRows?.length) {
-        const unitMap = new Map<number, "reps" | "steps">(
-          catalogRows.map((r) => [r.id as number, (r.unit === "steps" ? "steps" : "reps") as "reps" | "steps"])
-        )
-        exList = exList.map((row) => ({
-          ...row,
-          unit: row.catalog_exercise_id != null ? unitMap.get(row.catalog_exercise_id) : undefined,
-        }))
-      }
+    let catalogRowsById: Array<{ id: number; unit: string; weight: number; label?: string }> = []
+    if (catalogIds.length > 0) {
+      const { data } = await supabase
+        .from("exercise_catalog")
+        .select("id,unit,weight,label")
+        .in("id", catalogIds)
+      catalogRowsById = (data as Array<{ id: number; unit: string; weight: number; label?: string }>) ?? []
     }
+    let catalogRowsByLabel: Array<{ id: number; unit: string; weight: number; label?: string }> = []
+    if (nameList.length > 0) {
+      const { data } = await supabase
+        .from("exercise_catalog")
+        .select("id,unit,weight,label")
+        .in("label", nameList)
+      catalogRowsByLabel = (data as Array<{ id: number; unit: string; weight: number; label?: string }>) ?? []
+    }
+
+    const byIdUnitMap = new Map<number, "reps" | "steps">(
+      catalogRowsById.map((r) => [r.id, (r.unit === "steps" ? "steps" : "reps") as "reps" | "steps"])
+    )
+    const byIdWeightMap = new Map<number, number>(catalogRowsById.map((r) => [r.id, Number(r.weight) || 1]))
+    const byLabelUnitMap = new Map<string, "reps" | "steps">(
+      catalogRowsByLabel.map((r) => [String(r.label ?? ""), (r.unit === "steps" ? "steps" : "reps") as "reps" | "steps"])
+    )
+    const byLabelWeightMap = new Map<string, number>(
+      catalogRowsByLabel.map((r) => [String(r.label ?? ""), Number(r.weight) || 1])
+    )
+
+    exList = exList.map((row) => ({
+      ...row,
+      unit:
+        row.unit ??
+        (row.catalog_exercise_id != null ? byIdUnitMap.get(row.catalog_exercise_id) : undefined) ??
+        byLabelUnitMap.get(row.name),
+      weight:
+        row.weight != null
+          ? row.weight
+          : row.catalog_exercise_id != null
+            ? byIdWeightMap.get(row.catalog_exercise_id) ?? byLabelWeightMap.get(row.name)
+            : byLabelWeightMap.get(row.name),
+    }))
     setExercises(exList)
 
     if (exList.length === 0) {
@@ -856,7 +915,16 @@ export default function Home() {
         const { error: insertErr } = await supabase
           .from("user_exercise_progress")
           .insert({ user_id: uid, local_date: entryDate, day_exercise_id: id, done: updated })
-        if (insertErr) setDbg("ERROR save progress: " + insertErr.message)
+        if (insertErr) {
+          if (insertErr.message?.includes("user_exercise_progress_pkey")) {
+            const { error: retryInsertErr } = await supabase
+              .from("user_exercise_progress")
+              .insert({ user_id: uid, local_date: entryDate, day_exercise_id: id, done: updated })
+            if (retryInsertErr) setDbg("ERROR save progress: " + retryInsertErr.message)
+          } else {
+            setDbg("ERROR save progress: " + insertErr.message)
+          }
+        }
       } else {
         setDbg("ERROR save progress: " + error.message)
       }
@@ -1009,8 +1077,16 @@ export default function Home() {
       }
       const { error: pinsErr2 } = await supabase.from("user_exercise_progress").insert(progressRows)
       if (pinsErr2) {
-        setDbg("ERROR stars save: " + pinsErr2.message)
-        return
+        if (pinsErr2.message?.includes("user_exercise_progress_pkey")) {
+          const { error: pinsErr3 } = await supabase.from("user_exercise_progress").insert(progressRows)
+          if (pinsErr3) {
+            setDbg("ERROR stars save: " + pinsErr3.message)
+            return
+          }
+        } else {
+          setDbg("ERROR stars save: " + pinsErr2.message)
+          return
+        }
       }
     }
 
