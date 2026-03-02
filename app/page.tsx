@@ -563,13 +563,32 @@ export default function Home() {
         return
       }
 
-      const { data: tgRows } = await supabase
+      const { data: tgRows, error: tgErr } = await supabase
         .from("telegram_users")
         .select("user_id,username,first_name,display_name")
         .in("user_id", userIds)
+      let safeTgRows: Array<{ user_id: string; username?: string | null; first_name?: string | null; display_name?: string | null }> =
+        (tgRows as Array<{ user_id: string; username?: string | null; first_name?: string | null; display_name?: string | null }>) ?? []
+      let displayNameColumnMissing = false
+      if (tgErr) {
+        const msg = tgErr.message || ""
+        if (msg.includes("display_name")) {
+          displayNameColumnMissing = true
+          setLeaderboardDisplayNameError("display_name column missing")
+          const fallback = await supabase
+            .from("telegram_users")
+            .select("user_id,username,first_name")
+            .in("user_id", userIds)
+          if (fallback.error) throw new Error(fallback.error.message)
+          safeTgRows =
+            (fallback.data as Array<{ user_id: string; username?: string | null; first_name?: string | null }>) ?? []
+        } else {
+          throw new Error(msg)
+        }
+      }
       const displayNameMap = new Map<string, string>()
       let currentUserDisplayName: string | null = null
-      tgRows?.forEach((r) => {
+      safeTgRows?.forEach((r) => {
         const key = String(r.user_id)
         const displayName = typeof r.display_name === "string" ? r.display_name.trim() : ""
         if (key === uid) currentUserDisplayName = displayName || null
@@ -585,7 +604,7 @@ export default function Home() {
           displayNameMap.set(key, String(r.first_name))
         }
       })
-      setShowLeaderboardNameForm(!currentUserDisplayName)
+      setShowLeaderboardNameForm(displayNameColumnMissing ? true : !currentUserDisplayName)
       if (currentUserDisplayName) setLeaderboardDisplayName(currentUserDisplayName)
 
       const starsPairs = await Promise.all(
@@ -828,7 +847,7 @@ export default function Home() {
         ok = true
         break
       }
-      message = error.message
+      message = error.message?.includes("display_name") ? "display_name column missing" : error.message
     }
 
     if (!ok) {

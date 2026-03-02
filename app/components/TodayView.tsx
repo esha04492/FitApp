@@ -168,6 +168,8 @@ export default function TodayView(props: {
           const remaining = Math.max(ex.target_reps - reps, 0)
           const isSteps = ex.unit === "steps" || ex.target_reps >= 1000 || /step/i.test(ex.name)
           const unitsPerStar = ex.weight != null ? Math.round(Number(ex.weight) * 1000) / 1000 : null
+          const starCostText =
+            unitsPerStar != null && ex.unit ? `1 star = ${unitsPerStar} ${ex.unit}` : "—"
 
           return (
             <div
@@ -207,9 +209,7 @@ export default function TodayView(props: {
                 <div className="text-4xl font-semibold tabular-nums tracking-tight">
                   {pretty(reps)}
                   <span className="text-xl text-neutral-500"> / {pretty(ex.target_reps)}</span>
-                  {unitsPerStar != null ? (
-                    <span className="ml-2 text-xs text-neutral-500 align-middle">({`1 star = ${unitsPerStar} units`})</span>
-                  ) : null}
+                  <span className="ml-2 text-xs text-neutral-500 align-middle">({starCostText})</span>
                 </div>
                 <div className="text-sm text-neutral-400 tabular-nums">{percent}%</div>
               </div>
