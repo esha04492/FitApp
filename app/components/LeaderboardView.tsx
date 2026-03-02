@@ -84,10 +84,40 @@ export default function LeaderboardView(props: {
               ? rows.map((row) => (
                   <div
                     key={row.userId}
-                    className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2"
+                    className={`flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2 ${
+                      row.rank <= 3 ? "py-3" : ""
+                    }`}
                   >
-                    <div className="text-sm font-semibold tabular-nums">#{row.rank}</div>
-                    <div className="mx-3 flex-1 truncate text-sm text-neutral-200">{row.label}</div>
+                    <div
+                      className={`tabular-nums ${
+                        row.rank <= 3 ? "text-base font-bold" : "text-sm font-semibold"
+                      } ${
+                        row.rank === 1
+                          ? "text-amber-300"
+                          : row.rank === 2
+                            ? "text-slate-300"
+                            : row.rank === 3
+                              ? "text-orange-300"
+                              : ""
+                      }`}
+                    >
+                      #{row.rank}
+                    </div>
+                    <div
+                      className={`mx-3 flex-1 truncate ${
+                        row.rank <= 3 ? "text-base font-bold" : "text-sm"
+                      } ${
+                        row.rank === 1
+                          ? "text-amber-300"
+                          : row.rank === 2
+                            ? "text-slate-300"
+                            : row.rank === 3
+                              ? "text-orange-300"
+                              : "text-neutral-200"
+                      }`}
+                    >
+                      {row.label}
+                    </div>
                     <div className="text-right">
                       <div className="text-sm font-semibold tabular-nums text-amber-200">{row.totalStars.toFixed(1)}</div>
                       <div className="text-[11px] text-neutral-400">Streak {row.streakStars.toFixed(1)}</div>
