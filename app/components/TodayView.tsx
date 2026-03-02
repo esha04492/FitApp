@@ -57,6 +57,89 @@ export default function TodayView(props: {
     editExercise,
   } = props
 
+  const trExerciseName = (name: string) => {
+    if (lang !== "ru") return name
+    const key = name.trim().toLowerCase()
+    const map: Record<string, string> = {
+      "push-ups": "Отжимания",
+      pushups: "Отжимания",
+      "pull-ups": "Подтягивания",
+      pullups: "Подтягивания",
+      squats: "Приседания",
+      dips: "Отжимания на брусьях",
+      abs: "Пресс",
+      walking: "Ходьба",
+      lunges: "Выпады",
+      burpees: "Берпи",
+      "jump rope": "Прыжки на скакалке",
+      "mountain climbers": "Скалолаз",
+    }
+    return map[key] ?? name
+  }
+
+  const tx =
+    lang === "ru"
+      ? {
+          workout: "Тренировка",
+          day: "День",
+          streak: "Серия",
+          dayProgress: "Прогресс дня",
+          dayComplete: "День завершен",
+          finishAll: "Заверши все упражнения",
+          exercise: "Упражнение",
+          edit: "Изменить",
+          completed: "Выполнено",
+          left: "Осталось",
+          anyNumber: "Любое число",
+          add: "Добавить",
+          nextDay: "Следующий день",
+          skipDay: "Пропустить день",
+          skipConfirm: "Ты уверен, что хочешь пропустить день?",
+          no: "Нет",
+          yes: "Да",
+          editExercise: "Редактировать упражнение",
+          nameRequired: "Название обязательно",
+          updateFailed: "Не удалось обновить",
+          applyTo: "Применить изменения к:",
+          todayOnly: "Только сегодня",
+          wholeProgram: "Вся программа",
+          cancel: "Отмена",
+          save: "Сохранить",
+          onboardingTitle: "FitStreak — 100 дней дисциплины",
+          onboardingBody:
+            "Это приложение для 100-дневного челленджа. Каждый день отмечай выполнение упражнений, следи за серией и старайся не прерывать её.\nМожно пропустить день, но серия обнулится.\nЖми «Следующий день», когда закроешь все упражнения.",
+        }
+      : {
+          workout: "Workout",
+          day: "Day",
+          streak: "Streak",
+          dayProgress: "Day progress",
+          dayComplete: "Day complete",
+          finishAll: "Finish all exercises",
+          exercise: "Exercise",
+          edit: "Edit",
+          completed: "Completed",
+          left: "Left",
+          anyNumber: "Any number",
+          add: "Add",
+          nextDay: "Next day",
+          skipDay: "Skip day",
+          skipConfirm: "Are you sure you want to skip this day?",
+          no: "No",
+          yes: "Yes",
+          editExercise: "Edit exercise",
+          nameRequired: "Name is required",
+          updateFailed: "Update failed",
+          applyTo: "Apply changes to:",
+          todayOnly: "Today only",
+          wholeProgram: "Whole program",
+          cancel: "Cancel",
+          save: "Save",
+          onboardingTitle: "FitStreak - 100 days of discipline",
+          onboardingBody:
+            "This app is a 100-day challenge tracker. Mark your exercises daily, build your streak, and stay consistent.\nYou can skip a day, but your streak will reset.\nTap Next day when all exercises are done. Let us go.",
+        }
+
   const selectedExercise = useMemo(
     () => exercises.find((x) => x.id === editExerciseId) ?? null,
     [editExerciseId, exercises]
@@ -86,7 +169,7 @@ export default function TodayView(props: {
     const name = editName.trim()
     const target = Math.max(1, Number(editTarget) || 0)
     if (!name) {
-      setEditError("Name is required")
+      setEditError(tx.nameRequired)
       return
     }
 
@@ -102,7 +185,7 @@ export default function TodayView(props: {
     })
 
     if (!result.ok) {
-      setEditError(result.error ?? "Update failed")
+      setEditError(result.error ?? tx.updateFailed)
       setSavingEdit(false)
       return
     }
@@ -114,12 +197,14 @@ export default function TodayView(props: {
   return (
     <>
       <div className="mb-7 text-center">
-        <div className="text-sm text-neutral-400">Workout</div>
+        <div className="text-sm text-neutral-400">{tx.workout}</div>
         <div className="mt-1 flex items-center justify-center gap-2">
-          <div className="text-3xl font-semibold tracking-tight">Day {day}</div>
+          <div className="text-3xl font-semibold tracking-tight">
+            {tx.day} {day}
+          </div>
           {currentStreak > 0 ? (
             <span className="animate-pulse rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs text-amber-300">
-              🔥 Streak <span className="font-bold">{currentStreak}</span> 🔥
+              🔥 {tx.streak} <span className="font-bold">{currentStreak}</span> 🔥
             </span>
           ) : null}
         </div>
@@ -127,11 +212,11 @@ export default function TodayView(props: {
         <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur">
           <div className="flex items-end justify-between gap-3">
             <div className="text-left">
-              <div className="text-xs text-neutral-400">Day progress</div>
+              <div className="text-xs text-neutral-400">{tx.dayProgress}</div>
               <div className="mt-1 text-3xl font-semibold tabular-nums">{dayTotals.pct}%</div>
             </div>
 
-            <div className="text-right text-xs text-neutral-500">{allCompleted ? "Day complete" : "Finish all exercises"}</div>
+            <div className="text-right text-xs text-neutral-500">{allCompleted ? tx.dayComplete : tx.finishAll}</div>
           </div>
 
           <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
@@ -154,10 +239,8 @@ export default function TodayView(props: {
             X
           </button>
           <div className="pr-10 text-center">
-            <div className="text-sm font-semibold text-neutral-100">FitStreak - 100 days of discipline</div>
-            <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-neutral-300">
-              {"This app is a 100-day challenge tracker. Mark your exercises daily, build your streak, and stay consistent.\nYou can skip a day, but your streak will reset.\nTap Next day when all exercises are done. Let us go."}
-            </p>
+            <div className="text-sm font-semibold text-neutral-100">{tx.onboardingTitle}</div>
+            <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-neutral-300">{tx.onboardingBody}</p>
           </div>
         </div>
       ) : null}
@@ -184,8 +267,8 @@ export default function TodayView(props: {
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-sm text-neutral-400">Exercise</div>
-                  <div className="mt-0.5 text-lg font-semibold">{ex.name}</div>
+                  <div className="text-sm text-neutral-400">{tx.exercise}</div>
+                  <div className="mt-0.5 text-lg font-semibold">{trExerciseName(ex.name)}</div>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -195,15 +278,15 @@ export default function TodayView(props: {
                     className="h-8 rounded-xl border border-white/10 bg-white/5 px-2 text-xs text-neutral-200 transition hover:bg-white/10"
                     aria-label="Edit exercise"
                   >
-                    Edit
+                    {tx.edit}
                   </button>
                   {isCompleted ? (
                     <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200">
-                      Completed
+                      {tx.completed}
                     </span>
                   ) : (
                     <span className="whitespace-nowrap rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-neutral-300">
-                      Left {pretty(remaining)}
+                      {tx.left} {pretty(remaining)}
                     </span>
                   )}
                 </div>
@@ -213,7 +296,7 @@ export default function TodayView(props: {
                 <div className="text-4xl font-semibold tabular-nums tracking-tight">
                   {pretty(reps)}
                   <span className="text-xl text-neutral-500"> / {pretty(ex.target_reps)}</span>
-                  <span className="ml-2 text-xs text-neutral-500 align-middle">({starCostText})</span>
+                  <span className="ml-2 text-xs text-amber-300 align-middle">({starCostText})</span>
                 </div>
                 <div className="text-sm text-neutral-400 tabular-nums">{percent}%</div>
               </div>
@@ -267,7 +350,7 @@ export default function TodayView(props: {
                 <input
                   inputMode="numeric"
                   type="number"
-                  placeholder="Any number"
+                  placeholder={tx.anyNumber}
                   value={customInput[ex.id] || ""}
                   onChange={(e) =>
                     setCustomInput((prev) => ({
@@ -283,7 +366,7 @@ export default function TodayView(props: {
                   onClick={() => addCustomReps(ex.id, ex.target_reps)}
                   className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 shadow-sm transition active:scale-[0.99] hover:bg-white/10"
                 >
-                  Add
+                  {tx.add}
                 </button>
               </div>
             </div>
@@ -302,28 +385,28 @@ export default function TodayView(props: {
               : "bg-white/5 text-neutral-500 border border-white/10 cursor-not-allowed"
           }`}
         >
-          Next day
+          {tx.nextDay}
         </button>
         <button
           type="button"
           onClick={() => setShowSkip(true)}
           className="mt-3 text-xs text-neutral-500 hover:text-neutral-300 transition"
         >
-          Skip day
+          {tx.skipDay}
         </button>
       </div>
 
       {showSkip ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
           <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-neutral-900 px-5 py-4 shadow-2xl">
-            <div className="text-base font-semibold text-neutral-100">Are you sure you want to skip this day?</div>
+            <div className="text-base font-semibold text-neutral-100">{tx.skipConfirm}</div>
             <div className="mt-4 flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setShowSkip(false)}
                 className="h-11 flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition active:scale-[0.99] hover:bg-white/10"
               >
-                No
+                {tx.no}
               </button>
               <button
                 type="button"
@@ -333,7 +416,7 @@ export default function TodayView(props: {
                 }}
                 className="h-9 rounded-xl border border-red-400/30 bg-red-500/15 px-3 text-xs font-semibold text-red-200 transition active:scale-[0.99] hover:bg-red-500/25"
               >
-                Yes
+                {tx.yes}
               </button>
             </div>
           </div>
@@ -343,7 +426,7 @@ export default function TodayView(props: {
       {selectedExercise ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
           <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-neutral-900 p-4 shadow-2xl">
-            <div className="text-sm font-semibold text-neutral-100">Edit exercise</div>
+            <div className="text-sm font-semibold text-neutral-100">{tx.editExercise}</div>
             <div className="mt-3 space-y-2">
               <input
                 value={editName}
@@ -360,7 +443,7 @@ export default function TodayView(props: {
             </div>
 
             <div className="mt-4">
-              <div className="text-xs text-neutral-400">Apply changes to:</div>
+              <div className="text-xs text-neutral-400">{tx.applyTo}</div>
               <label className="mt-2 flex items-center gap-2 text-sm text-neutral-200">
                 <input
                   type="radio"
@@ -368,7 +451,7 @@ export default function TodayView(props: {
                   checked={editApplyTo === "today"}
                   onChange={() => setEditApplyTo("today")}
                 />
-                <span>Today only</span>
+                <span>{tx.todayOnly}</span>
               </label>
               <label className="mt-1 flex items-center gap-2 text-sm text-neutral-200">
                 <input
@@ -377,7 +460,7 @@ export default function TodayView(props: {
                   checked={editApplyTo === "program"}
                   onChange={() => setEditApplyTo("program")}
                 />
-                <span>Whole program</span>
+                <span>{tx.wholeProgram}</span>
               </label>
             </div>
 
@@ -389,7 +472,7 @@ export default function TodayView(props: {
                 onClick={closeEdit}
                 className="h-10 rounded-xl border border-white/10 bg-white/5 px-4 text-sm text-neutral-100 transition hover:bg-white/10"
               >
-                Cancel
+                {tx.cancel}
               </button>
               <button
                 type="button"
@@ -397,7 +480,7 @@ export default function TodayView(props: {
                 onClick={saveEdit}
                 className="h-10 rounded-xl border border-emerald-400/20 bg-emerald-500/15 px-4 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:opacity-60"
               >
-                Save
+                {tx.save}
               </button>
             </div>
           </div>
