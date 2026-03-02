@@ -1,5 +1,6 @@
 ﻿import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { createHmac } from "crypto"
 
 export const runtime = "nodejs" // required for fetch + crypto in node runtime
 
@@ -11,6 +12,10 @@ const SUPABASE_KEY =
 
 function apiUrl(method: string) {
   return `https://api.telegram.org/bot${BOT_TOKEN}/${method}`
+}
+
+function buildSignature(uid: string, ts: string) {
+  return createHmac("sha256", BOT_TOKEN ?? "").update(`${uid}:${ts}`).digest("hex")
 }
 
 function getSupabase() {
@@ -58,6 +63,15 @@ export async function POST(req: Request) {
         }
       }
 
+      const ts = String(Math.floor(Date.now() / 1000))
+      const uidForLink = tgUserId ?? ""
+      const sig = uidForLink ? buildSignature(uidForLink, ts) : ""
+      const webAppUrl = uidForLink
+        ? `${WEBAPP_URL}${WEBAPP_URL.includes("?") ? "&" : "?"}tg_uid=${encodeURIComponent(
+            uidForLink
+          )}&tg_ts=${encodeURIComponent(ts)}&tg_sig=${encodeURIComponent(sig)}`
+        : WEBAPP_URL
+
       const payload = {
         chat_id: chatId,
         text:
@@ -69,7 +83,7 @@ export async function POST(req: Request) {
             [
               {
                 text: "Open app",
-                web_app: { url: WEBAPP_URL },
+                web_app: { url: webAppUrl },
               },
             ],
           ],

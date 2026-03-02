@@ -25,8 +25,12 @@ type IdentityDiagnostics = {
   hasTelegramObject: boolean
   hasWebAppObject: boolean
   hasInitDataUnsafeUserId: boolean
+  hasTelegramUserAgent: boolean
+  userAgent: string
+  referrer: string
   initDataLength: number
   hasTgWebAppDataParam: boolean
+  hasSignedUidParams: boolean
   tgWebAppParamKeys: string[]
   parsedUserIdFromInitData: string | null
   parsedUserIdFromUrl: string | null
@@ -34,6 +38,7 @@ type IdentityDiagnostics = {
 
 function isTelegramContext(): boolean {
   if (typeof window === "undefined") return false
+  const hasTelegramUA = /Telegram/i.test(navigator.userAgent)
   if ((window as TgWindow).Telegram?.WebApp) {
     sessionStorage.setItem("tg_context", "1")
     return true
@@ -51,6 +56,7 @@ function isTelegramContext(): boolean {
     }
   }
   if (sessionStorage.getItem("tg_context") === "1") return true
+  if (hasTelegramUA) return true
   return false
 }
 
@@ -93,14 +99,47 @@ function parseUserIdFromUrl(): string | null {
   return parseUserIdFromInitData(tgWebAppData.replace(/\+/g, "%20"))
 }
 
+function getSignedUidParams(): { uid: string; ts: string; sig: string } | null {
+  if (typeof window === "undefined") return null
+  const params = new URLSearchParams(window.location.search)
+  const uid = params.get("tg_uid")
+  const ts = params.get("tg_ts")
+  const sig = params.get("tg_sig")
+  if (!uid || !ts || !sig) return null
+  return { uid, ts, sig }
+}
+
+async function resolveSignedUidFromServer(): Promise<string | null> {
+  if (typeof window === "undefined") return null
+  const signed = getSignedUidParams()
+  if (!signed) return null
+
+  try {
+    const url = `/api/telegram/resolve?uid=${encodeURIComponent(signed.uid)}&ts=${encodeURIComponent(
+      signed.ts
+    )}&sig=${encodeURIComponent(signed.sig)}`
+    const res = await fetch(url, { method: "GET" })
+    if (!res.ok) return null
+    const body = (await res.json().catch(() => null)) as { ok?: boolean; userId?: string } | null
+    if (!body?.ok || !body.userId) return null
+    return body.userId
+  } catch {
+    return null
+  }
+}
+
 function getIdentityDiagnostics(): IdentityDiagnostics {
   if (typeof window === "undefined") {
     return {
       hasTelegramObject: false,
       hasWebAppObject: false,
       hasInitDataUnsafeUserId: false,
+      hasTelegramUserAgent: false,
+      userAgent: "",
+      referrer: "",
       initDataLength: 0,
       hasTgWebAppDataParam: false,
+      hasSignedUidParams: false,
       tgWebAppParamKeys: [],
       parsedUserIdFromInitData: null,
       parsedUserIdFromUrl: null,
@@ -116,8 +155,12 @@ function getIdentityDiagnostics(): IdentityDiagnostics {
     hasTelegramObject: Boolean(tg),
     hasWebAppObject: Boolean(webApp),
     hasInitDataUnsafeUserId: webApp?.initDataUnsafe?.user?.id != null,
+    hasTelegramUserAgent: /Telegram/i.test(navigator.userAgent),
+    userAgent: navigator.userAgent,
+    referrer: document.referrer,
     initDataLength: webApp?.initData?.length ?? 0,
     hasTgWebAppDataParam: params.has("tgWebAppData"),
+    hasSignedUidParams: Boolean(getSignedUidParams()),
     tgWebAppParamKeys: tgKeys,
     parsedUserIdFromInitData: parseUserIdFromInitData(webApp?.initData),
     parsedUserIdFromUrl: parseUserIdFromUrl(),
@@ -177,12 +220,33 @@ function getUserIdStrict(): StrictIdentity {
 }
 
 async function resolveStrictIdentity(attempts = 60, delayMs = 150): Promise<StrictIdentity> {
+  if (typeof window !== "undefined") {
+    const cached = sessionStorage.getItem("telegram_uid_resolved")
+    if (cached) return { id: cached, source: "telegram" }
+  }
+
   for (let i = 0; i < attempts; i += 1) {
     const identity = getUserIdStrict()
     if (identity.source !== "telegram_no_id" && identity.id) return identity
+
+    const signedUid = await resolveSignedUidFromServer()
+    if (signedUid) {
+      sessionStorage.setItem("telegram_uid_resolved", signedUid)
+      return { id: signedUid, source: "telegram" }
+    }
+
     await new Promise((resolve) => setTimeout(resolve, delayMs))
   }
-  return getUserIdStrict()
+
+  const fallback = getUserIdStrict()
+  if (fallback.source === "telegram_no_id") {
+    const signedUid = await resolveSignedUidFromServer()
+    if (signedUid) {
+      sessionStorage.setItem("telegram_uid_resolved", signedUid)
+      return { id: signedUid, source: "telegram" }
+    }
+  }
+  return fallback
 }
 
 async function getOrCreateUserId() {
