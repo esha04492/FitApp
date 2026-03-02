@@ -12,6 +12,73 @@ import TabBar from "./components/TabBar"
 import { clamp, computeStreaks, localISODate } from "./lib/date"
 import { loadExerciseCatalog } from "./lib/catalog"
 const PROGRAM_NAME = "100 days v.2"
+type Lang = "ru" | "en"
+const I18N: Record<
+  Lang,
+  {
+    tabToday: string
+    tabStats: string
+    tabLeaderboard: string
+    leaderboardTitle: string
+    totalStar: string
+    chooseName: string
+    save: string
+    globalLeaderboard: string
+    loadingLeaderboard: string
+    noData: string
+    welcome: string
+    builtInSubtitle: string
+    createOwn: string
+    customSubtitle: string
+    confirmTitle: string
+    confirmBody: string
+    confirmOk: string
+    confirmBack: string
+  }
+> = {
+  ru: {
+    tabToday: "Сегодня",
+    tabStats: "Статистика",
+    tabLeaderboard: "Лидерборд",
+    leaderboardTitle: "Лидерборд",
+    totalStar: "Всего ★",
+    chooseName: "Выбери имя в лидерборде",
+    save: "Сохранить",
+    globalLeaderboard: "Глобальный лидерборд",
+    loadingLeaderboard: "Загрузка лидерборда...",
+    noData: "Пока нет данных.",
+    welcome: "Добро пожаловать! Выбери готовую программу или создай свою",
+    builtInSubtitle: "Встроенная программа",
+    createOwn: "Создать свою",
+    customSubtitle: "Твой кастомный план тренировок",
+    confirmTitle: "Чередование + шаги",
+    confirmBody:
+      "Эта программа представляет из себя чередующиеся 2 тренировки на протяжении 100 дней:\n• День A: отжимания двух типов, подтягивания и шаги\n• День B: пресс, приседания и шаги\nИ так по кругу, 100 дней.",
+    confirmOk: "Ок",
+    confirmBack: "Назад",
+  },
+  en: {
+    tabToday: "Today",
+    tabStats: "Stats",
+    tabLeaderboard: "Leaderboard",
+    leaderboardTitle: "Leaderboard",
+    totalStar: "Total ★",
+    chooseName: "Choose your leaderboard name",
+    save: "Save",
+    globalLeaderboard: "Global leaderboard",
+    loadingLeaderboard: "Loading leaderboard...",
+    noData: "No data yet.",
+    welcome: "Welcome! Choose a ready program or create your own",
+    builtInSubtitle: "Built-in program",
+    createOwn: "Create your own",
+    customSubtitle: "Your custom workout plan",
+    confirmTitle: "Alternation + steps",
+    confirmBody:
+      "This program alternates two workouts for 100 days:\n• Day A: two push-up types, pull-ups, and steps\n• Day B: abs, squats, and steps\nRepeat this cycle for 100 days.",
+    confirmOk: "OK",
+    confirmBack: "Back",
+  },
+}
 
 type TgWindow = Window & {
   Telegram?: {
@@ -332,6 +399,7 @@ async function persistTelegramProfile(internalUserId: string, debugEnabled: bool
 export default function Home() {
   const [dbg, setDbg] = useState<string>("")
   const [tab, setTab] = useState<"today" | "stats" | "leaderboard">("today")
+  const [lang, setLang] = useState<Lang>("ru")
 
   const [loading, setLoading] = useState(true)
   const [programId, setProgramId] = useState<string | number | null>(null)
@@ -362,6 +430,15 @@ export default function Home() {
   const [identityDebug, setIdentityDebug] = useState<string>("")
   const [identityDiagnostics, setIdentityDiagnostics] = useState<string>("")
   const [identitySource, setIdentitySource] = useState<StrictIdentity["source"]>("local")
+
+  useEffect(() => {
+    const stored = localStorage.getItem("lang")
+    if (stored === "ru" || stored === "en") setLang(stored)
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem("lang", lang)
+  }, [lang])
 
   useEffect(() => {
     const savedTab = localStorage.getItem("tab")
@@ -1156,7 +1233,7 @@ export default function Home() {
       .eq("user_id", uid)
       .eq("local_date", entryDate)
     if (pdelErr) {
-      setDbg("ERROR stars delete: " + pdelErr.message)
+      setDbg("ERROR ★ delete: " + pdelErr.message)
       return
     }
     const { error: pinsErr } = await supabase
@@ -1170,7 +1247,7 @@ export default function Home() {
         .eq("user_id", uid)
         .in("day_exercise_id", dayExerciseIds)
       if (pdelErr2) {
-        setDbg("ERROR stars save: " + pdelErr2.message)
+        setDbg("ERROR ★ save: " + pdelErr2.message)
         return
       }
       const { error: pinsErr2 } = await supabase.from("user_exercise_progress").insert(progressRows)
@@ -1178,11 +1255,11 @@ export default function Home() {
         if (pinsErr2.message?.includes("user_exercise_progress_pkey")) {
           const { error: pinsErr3 } = await supabase.from("user_exercise_progress").insert(progressRows)
           if (pinsErr3) {
-            setDbg("ERROR stars save: " + pinsErr3.message)
+            setDbg("ERROR ★ save: " + pinsErr3.message)
             return
           }
         } else {
-          setDbg("ERROR stars save: " + pinsErr2.message)
+          setDbg("ERROR ★ save: " + pinsErr2.message)
           return
         }
       }
@@ -1279,10 +1356,23 @@ export default function Home() {
               onPickBuiltIn={chooseBuiltInProgram}
               onPickCustom={() => setShowCustomBuilder(true)}
               loading={isLoadingProgram}
+              lang={lang}
+              onLangChange={setLang}
+              labels={{
+                welcome: I18N[lang].welcome,
+                builtInSubtitle: I18N[lang].builtInSubtitle,
+                createOwn: I18N[lang].createOwn,
+                customSubtitle: I18N[lang].customSubtitle,
+                confirmTitle: I18N[lang].confirmTitle,
+                confirmBody: I18N[lang].confirmBody,
+                confirmOk: I18N[lang].confirmOk,
+                confirmBack: I18N[lang].confirmBack,
+              }}
             />
           )
         ) : tab === "today" ? (
           <TodayView
+            lang={lang}
             day={day}
             exercises={exercises}
             progress={progress}
@@ -1369,11 +1459,30 @@ export default function Home() {
             displayNameError={leaderboardDisplayNameError}
             onDisplayNameChange={setLeaderboardDisplayName}
             onSaveDisplayName={saveLeaderboardDisplayName}
+            labels={{
+              leaderboard: I18N[lang].leaderboardTitle,
+              totalStarTitle: I18N[lang].totalStar,
+              chooseName: I18N[lang].chooseName,
+              save: I18N[lang].save,
+              global: I18N[lang].globalLeaderboard,
+              loading: I18N[lang].loadingLeaderboard,
+              noData: I18N[lang].noData,
+            }}
           />
         )}
       </div>
 
-      {programId == null ? null : <TabBar tab={tab} setTab={setTab} />}
+      {programId == null ? null : (
+        <TabBar
+          tab={tab}
+          setTab={setTab}
+          labels={{
+            today: I18N[lang].tabToday,
+            stats: I18N[lang].tabStats,
+            leaderboard: I18N[lang].tabLeaderboard,
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -18,6 +18,15 @@ export default function LeaderboardView(props: {
   displayNameError: string | null
   onDisplayNameChange: (value: string) => void
   onSaveDisplayName: () => Promise<void>
+  labels?: {
+    leaderboard: string
+    totalStarTitle: string
+    chooseName: string
+    save: string
+    global: string
+    loading: string
+    noData: string
+  }
 }) {
   const {
     myTotalStars,
@@ -30,24 +39,34 @@ export default function LeaderboardView(props: {
     displayNameError,
     onDisplayNameChange,
     onSaveDisplayName,
+    labels,
   } = props
+  const l = labels ?? {
+    leaderboard: "Leaderboard",
+    totalStarTitle: "Total ★",
+    chooseName: "Choose your leaderboard name",
+    save: "Save",
+    global: "Global leaderboard",
+    loading: "Loading leaderboard...",
+    noData: "No data yet.",
+  }
 
   return (
     <>
       <div className="mb-7 text-center">
-        <div className="text-sm text-neutral-400">Leaderboard</div>
-        <div className="mt-1 text-3xl font-semibold tracking-tight">Total stars</div>
+        <div className="text-sm text-neutral-400">{l.leaderboard}</div>
+        <div className="mt-1 text-3xl font-semibold tracking-tight">{l.totalStarTitle}</div>
 
         <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 backdrop-blur text-left">
-          <div className="text-xs text-amber-300/90">Total stars</div>
-          <div className="mt-1 text-3xl font-semibold tabular-nums text-amber-200">{myTotalStars.toLocaleString("en-US")}</div>
+          <div className="text-xs text-amber-300/90">{l.totalStarTitle}</div>
+          <div className="mt-1 text-3xl font-semibold tabular-nums text-amber-200">{myTotalStars.toLocaleString("en-US")} ★</div>
         </div>
       </div>
 
       <div className="space-y-4">
         {showNameForm ? (
           <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-            <div className="text-sm font-semibold">Choose your leaderboard name</div>
+            <div className="text-sm font-semibold">{l.chooseName}</div>
             <div className="mt-3 flex gap-2">
               <input
                 value={displayName}
@@ -61,7 +80,7 @@ export default function LeaderboardView(props: {
                 onClick={onSaveDisplayName}
                 className="h-11 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition hover:bg-white/10 disabled:opacity-50"
               >
-                Save
+                {l.save}
               </button>
             </div>
             {displayNameError ? <div className="mt-2 text-xs text-red-200">{displayNameError}</div> : null}
@@ -69,12 +88,12 @@ export default function LeaderboardView(props: {
         ) : null}
 
         <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-          <div className="text-sm font-semibold">Global leaderboard</div>
+          <div className="text-sm font-semibold">{l.global}</div>
           <div className="mt-3 space-y-2">
-            {loading ? <div className="text-sm text-neutral-400">Loading leaderboard...</div> : null}
+            {loading ? <div className="text-sm text-neutral-400">{l.loading}</div> : null}
             {error ? <div className="text-xs text-red-200 break-words">{error}</div> : null}
             {!loading && !error && rows.length === 0 ? (
-              <div className="text-sm text-neutral-400">No data yet.</div>
+              <div className="text-sm text-neutral-400">{l.noData}</div>
             ) : null}
             {!loading && !error
               ? rows.map((row) => (
@@ -115,7 +134,7 @@ export default function LeaderboardView(props: {
                       {row.label}
                     </div>
                     <div className="text-right">
-                      <div className="text-sm font-semibold tabular-nums text-amber-200">{row.totalStars.toLocaleString("en-US")}</div>
+                      <div className="text-sm font-semibold tabular-nums text-amber-200">{row.totalStars.toLocaleString("en-US")} ★</div>
                     </div>
                   </div>
                 ))

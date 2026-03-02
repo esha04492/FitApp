@@ -5,6 +5,7 @@ import { clamp } from "../lib/date"
 import type { Exercise } from "./types"
 
 export default function TodayView(props: {
+  lang?: "ru" | "en"
   day: number
   currentStreak: number
   exercises: Exercise[]
@@ -39,6 +40,7 @@ export default function TodayView(props: {
   const [savingEdit, setSavingEdit] = useState(false)
 
   const {
+    lang = "ru",
     day,
     currentStreak,
     exercises,
@@ -168,8 +170,10 @@ export default function TodayView(props: {
           const remaining = Math.max(ex.target_reps - reps, 0)
           const isSteps = ex.unit === "steps" || ex.target_reps >= 1000 || /step/i.test(ex.name)
           const unitsPerStar = ex.weight != null ? Math.round(Number(ex.weight) * 1000) / 1000 : null
+          const unitLabel =
+            ex.unit === "steps" ? (lang === "ru" ? "шагов" : "steps") : lang === "ru" ? "повторений" : "reps"
           const starCostText =
-            unitsPerStar != null && ex.unit ? `1 star = ${unitsPerStar} ${ex.unit}` : "—"
+            unitsPerStar != null && ex.unit ? `1 ★ = ${unitsPerStar} ${unitLabel}` : "—"
 
           return (
             <div
