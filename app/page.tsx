@@ -538,24 +538,19 @@ export default function Home() {
       day_exercise_id?: string | null
     }
     let breakdownRows: BreakdownRow[] = []
-    const repsQuery = await supabase
+    const repsQueryWithDayExercise = await supabase
       .from("user_day_history_exercises")
       .select("user_id,reps_done,catalog_exercise_id,day_exercise_id")
       .in("user_id", userIds)
-    if (repsQuery.error) {
-      const doneQuery = await supabase
+    if (repsQueryWithDayExercise.error) {
+      const repsQuery = await supabase
         .from("user_day_history_exercises")
-        .select("user_id,done,catalog_exercise_id,day_exercise_id")
+        .select("user_id,reps_done,catalog_exercise_id")
         .in("user_id", userIds)
-      if (doneQuery.error) throw new Error(doneQuery.error.message)
-      breakdownRows = ((doneQuery.data as Array<BreakdownRow & { done?: number | null }>) ?? []).map((r) => ({
-        user_id: r.user_id,
-        reps_done: Number(r.done) || 0,
-        catalog_exercise_id: r.catalog_exercise_id,
-        day_exercise_id: r.day_exercise_id,
-      }))
-    } else {
+      if (repsQuery.error) throw new Error(repsQuery.error.message)
       breakdownRows = (repsQuery.data as BreakdownRow[]) ?? []
+    } else {
+      breakdownRows = (repsQueryWithDayExercise.data as BreakdownRow[]) ?? []
     }
 
     const dayExerciseIds = Array.from(
