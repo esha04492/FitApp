@@ -15,11 +15,22 @@ type TgWindow = Window & {
     WebApp?: {
       initData?: string
       initDataUnsafe?: { user?: { id?: number | string } }
+      ready?: () => void
     }
   }
 }
 
 type StrictIdentity = { id: string | null; source: "telegram" | "telegram_no_id" | "local" }
+type IdentityDiagnostics = {
+  hasTelegramObject: boolean
+  hasWebAppObject: boolean
+  hasInitDataUnsafeUserId: boolean
+  initDataLength: number
+  hasTgWebAppDataParam: boolean
+  tgWebAppParamKeys: string[]
+  parsedUserIdFromInitData: string | null
+  parsedUserIdFromUrl: string | null
+}
 
 function isTelegramContext(): boolean {
   if (typeof window === "undefined") return false
@@ -40,22 +51,36 @@ function isTelegramContext(): boolean {
     }
   }
   if (sessionStorage.getItem("tg_context") === "1") return true
-  if (/Telegram/i.test(navigator.userAgent)) return true
   return false
 }
 
 function parseUserIdFromInitData(initData: string | undefined): string | null {
   if (!initData) return null
+  const candidates = [initData]
   try {
-    const params = new URLSearchParams(initData)
-    const rawUser = params.get("user")
-    if (!rawUser) return null
-    const parsed = JSON.parse(rawUser) as { id?: number | string }
-    if (parsed.id == null) return null
-    return String(parsed.id)
+    candidates.push(decodeURIComponent(initData))
   } catch {
-    return null
+    // no-op
   }
+  try {
+    candidates.push(decodeURIComponent(decodeURIComponent(initData)))
+  } catch {
+    // no-op
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const params = new URLSearchParams(candidate)
+      const rawUser = params.get("user")
+      if (!rawUser) continue
+      const parsed = JSON.parse(rawUser) as { id?: number | string }
+      if (parsed.id == null) continue
+      return String(parsed.id)
+    } catch {
+      // try next candidate
+    }
+  }
+  return null
 }
 
 function parseUserIdFromUrl(): string | null {
@@ -63,12 +88,50 @@ function parseUserIdFromUrl(): string | null {
   const params = new URLSearchParams(window.location.search)
   const tgWebAppData = params.get("tgWebAppData")
   if (!tgWebAppData) return null
-  return parseUserIdFromInitData(tgWebAppData)
+  const direct = parseUserIdFromInitData(tgWebAppData)
+  if (direct) return direct
+  return parseUserIdFromInitData(tgWebAppData.replace(/\+/g, "%20"))
+}
+
+function getIdentityDiagnostics(): IdentityDiagnostics {
+  if (typeof window === "undefined") {
+    return {
+      hasTelegramObject: false,
+      hasWebAppObject: false,
+      hasInitDataUnsafeUserId: false,
+      initDataLength: 0,
+      hasTgWebAppDataParam: false,
+      tgWebAppParamKeys: [],
+      parsedUserIdFromInitData: null,
+      parsedUserIdFromUrl: null,
+    }
+  }
+
+  const tg = (window as TgWindow).Telegram
+  const webApp = tg?.WebApp
+  const params = new URLSearchParams(window.location.search)
+  const tgKeys = Array.from(params.keys()).filter((k) => k.startsWith("tgWebApp"))
+
+  return {
+    hasTelegramObject: Boolean(tg),
+    hasWebAppObject: Boolean(webApp),
+    hasInitDataUnsafeUserId: webApp?.initDataUnsafe?.user?.id != null,
+    initDataLength: webApp?.initData?.length ?? 0,
+    hasTgWebAppDataParam: params.has("tgWebAppData"),
+    tgWebAppParamKeys: tgKeys,
+    parsedUserIdFromInitData: parseUserIdFromInitData(webApp?.initData),
+    parsedUserIdFromUrl: parseUserIdFromUrl(),
+  }
 }
 
 function getUserIdStrict(): StrictIdentity {
   if (typeof window === "undefined") return { id: null, source: "telegram_no_id" }
   const tg = (window as TgWindow).Telegram?.WebApp
+  try {
+    tg?.ready?.()
+  } catch {
+    // no-op
+  }
 
   const directId = tg?.initDataUnsafe?.user?.id
   if (directId != null) {
@@ -113,7 +176,7 @@ function getUserIdStrict(): StrictIdentity {
   }
 }
 
-async function resolveStrictIdentity(attempts = 20, delayMs = 100): Promise<StrictIdentity> {
+async function resolveStrictIdentity(attempts = 60, delayMs = 150): Promise<StrictIdentity> {
   for (let i = 0; i < attempts; i += 1) {
     const identity = getUserIdStrict()
     if (identity.source !== "telegram_no_id" && identity.id) return identity
@@ -146,6 +209,7 @@ export default function Home() {
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [historyByExercise, setHistoryByExercise] = useState<Record<string, number>>({})
   const [identityDebug, setIdentityDebug] = useState<string>("")
+  const [identityDiagnostics, setIdentityDiagnostics] = useState<string>("")
   const [identitySource, setIdentitySource] = useState<StrictIdentity["source"]>("local")
 
   useEffect(() => {
@@ -286,6 +350,12 @@ export default function Home() {
       setIdentitySource(identity.source)
       const debugEnabled = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "1"
       setIdentityDebug(debugEnabled ? `uid: ${identity.id ?? "null"} (source: ${identity.source})` : "")
+      if (debugEnabled || identity.source === "telegram_no_id") {
+        const diagnostics = getIdentityDiagnostics()
+        setIdentityDiagnostics(JSON.stringify(diagnostics, null, 2))
+      } else {
+        setIdentityDiagnostics("")
+      }
 
       if (identity.source === "telegram_no_id" || !identity.id) {
         setLoading(false)
@@ -703,6 +773,12 @@ export default function Home() {
         <div className="max-w-sm text-center">
           <div className="text-2xl font-semibold tracking-tight">Open inside Telegram</div>
           <div className="mt-2 text-sm text-neutral-400">This app must be opened from Telegram bot.</div>
+          <div className="mt-3 text-[11px] text-neutral-500">source: {identitySource}</div>
+          {identityDiagnostics ? (
+            <pre className="mt-3 max-h-56 overflow-auto rounded-2xl border border-white/10 bg-white/5 p-3 text-left text-[10px] leading-relaxed text-neutral-300">
+              {identityDiagnostics}
+            </pre>
+          ) : null}
         </div>
       </div>
     )
@@ -723,6 +799,11 @@ export default function Home() {
 
       <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-6 pb-24">
         {identityDebug ? <div className="mb-2 text-[11px] text-neutral-500">{identityDebug}</div> : null}
+        {identityDiagnostics ? (
+          <pre className="mb-3 overflow-auto rounded-2xl border border-white/10 bg-white/5 p-3 text-[10px] leading-relaxed text-neutral-300">
+            {identityDiagnostics}
+          </pre>
+        ) : null}
         {dbg.startsWith("ERROR") ? (
           <div className="mb-3 rounded-2xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
             {dbg}
