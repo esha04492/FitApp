@@ -958,10 +958,25 @@ export default function Home() {
       reps_target: ex.target_reps,
     }))
 
-    const { error: berr } = await supabase.from("user_day_history_exercises").upsert(breakdownRows)
+    const { error: berr } = await supabase
+      .from("user_day_history_exercises")
+      .upsert(breakdownRows, { onConflict: "user_id,program_id,day_number,exercise_name" })
     if (berr) {
-      setDbg("ERROR breakdown save: " + berr.message)
-      return
+      const { error: bdelErr } = await supabase
+        .from("user_day_history_exercises")
+        .delete()
+        .eq("user_id", uid)
+        .eq("program_id", programId)
+        .eq("day_number", day)
+      if (bdelErr) {
+        setDbg("ERROR breakdown save: " + bdelErr.message)
+        return
+      }
+      const { error: binsErr } = await supabase.from("user_day_history_exercises").insert(breakdownRows)
+      if (binsErr) {
+        setDbg("ERROR breakdown save: " + binsErr.message)
+        return
+      }
     }
 
     const progressRows = exercises.map((ex) => ({
@@ -979,10 +994,24 @@ export default function Home() {
       setDbg("ERROR stars delete: " + pdelErr.message)
       return
     }
-    const { error: pinsErr } = await supabase.from("user_exercise_progress").insert(progressRows)
+    const { error: pinsErr } = await supabase
+      .from("user_exercise_progress")
+      .upsert(progressRows, { onConflict: "user_id,day_exercise_id,local_date" })
     if (pinsErr) {
-      setDbg("ERROR stars save: " + pinsErr.message)
-      return
+      const { error: pdelErr2 } = await supabase
+        .from("user_exercise_progress")
+        .delete()
+        .eq("user_id", uid)
+        .eq("local_date", entryDate)
+      if (pdelErr2) {
+        setDbg("ERROR stars save: " + pdelErr2.message)
+        return
+      }
+      const { error: pinsErr2 } = await supabase.from("user_exercise_progress").insert(progressRows)
+      if (pinsErr2) {
+        setDbg("ERROR stars save: " + pinsErr2.message)
+        return
+      }
     }
 
     // 2) increment user_state day
