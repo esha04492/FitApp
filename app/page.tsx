@@ -4,6 +4,7 @@ import { supabase } from "./lib/supabase"
 import type { Exercise, HistoryEntry } from "./components/types"
 import ProgramPicker from "./components/ProgramPicker"
 import CustomProgramBuilder from "./components/CustomProgramBuilder"
+import type { BuilderExercise } from "./components/CustomProgramBuilder"
 import TodayView from "./components/TodayView"
 import StatsView from "./components/StatsView"
 import TabBar from "./components/TabBar"
@@ -569,15 +570,17 @@ export default function Home() {
   }
   const createCustomProgram = async (payload: {
     name: string
-    exercises: Array<{ name: string; target: number; unit: "reps" | "steps" }>
+    exercises: BuilderExercise[]
   }) => {
     const uid = await getOrCreateUserId()
     const programName = payload.name.trim()
     const exList = payload.exercises
       .map((x) => ({
+        catalogExerciseId: x.catalogExerciseId,
         name: x.name.trim(),
         target: Math.max(1, Number(x.target) || 0),
         unit: x.unit,
+        weight: Number.isFinite(Number(x.weight)) ? Number(x.weight) : null,
       }))
       .filter((x) => x.name.length > 0)
 
@@ -910,24 +913,46 @@ export default function Home() {
             historyByExercise={historyByExercise}
             onReset={async () => {
               const uid = await getOrCreateUserId()
-              if (programId == null) return
 
               await supabase.from("user_exercise_progress").delete().eq("user_id", uid)
-              await supabase.from("user_day_history").delete().eq("user_id", uid).eq("program_id", programId)
-              await supabase.from("user_day_history_exercises").delete().eq("user_id", uid).eq("program_id", programId)
-              await supabase.from("user_state").update({ current_day: 1 }).eq("user_id", uid)
+              if (programId != null) {
+                await supabase.from("user_day_history").delete().eq("user_id", uid).eq("program_id", programId)
+                await supabase.from("user_day_history_exercises").delete().eq("user_id", uid).eq("program_id", programId)
+              }
+
+              const { data: updatedRows, error: updateErr } = await supabase
+                .from("user_state")
+                .update({ program_id: null, current_day: 1, updated_at: new Date().toISOString() })
+                .eq("user_id", uid)
+                .select("user_id")
+                .limit(1)
+
+              if (updateErr) {
+                setDbg("ERROR reset user_state: " + updateErr.message)
+              } else if (!updatedRows || updatedRows.length === 0) {
+                const { error: insertStateErr } = await supabase
+                  .from("user_state")
+                  .insert({ user_id: uid, program_id: null, current_day: 1 })
+                if (insertStateErr) {
+                  setDbg("ERROR reset user_state insert: " + insertStateErr.message)
+                }
+              }
+
+              localStorage.removeItem("tab")
+              localStorage.removeItem("onboarding_dismissed")
+              sessionStorage.removeItem("telegram_uid_resolved")
+              sessionStorage.removeItem("tg_context")
 
               setDay(1)
+              setProgramId(null)
+              setShowProgramMenu(true)
+              setShowCustomBuilder(false)
               setExercises([])
               setProgress({})
               setCustomInput({})
               setHistory([])
               setHistoryByExercise({})
               setTab("today")
-
-              await loadDay(uid, programId, 1)
-              await fetchHistory(uid, programId)
-              await fetchHistoryBreakdown(uid, programId)
 
               setDbg("RESET OK")
             }}

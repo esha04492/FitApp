@@ -11,7 +11,13 @@ const SUPABASE_MODE = SERVICE_ROLE_KEY ? "service_role" : "anon"
 type CreateBody = {
   userId?: string
   name?: string
-  exercises?: Array<{ name?: string; target?: number; unit?: "reps" | "steps" }>
+  exercises?: Array<{
+    catalogExerciseId?: number
+    name?: string
+    target?: number
+    unit?: "reps" | "steps"
+    weight?: number
+  }>
 }
 
 function getSupabase() {
@@ -32,9 +38,11 @@ export async function POST(req: Request) {
     const exercises =
       body.exercises
         ?.map((x) => ({
+          catalogExerciseId: Number(x.catalogExerciseId) || null,
           name: String(x.name ?? "").trim(),
           target: Math.max(1, Number(x.target) || 0),
           unit: x.unit === "steps" ? "steps" : "reps",
+          weight: Number.isFinite(Number(x.weight)) ? Number(x.weight) : null,
         }))
         .filter((x) => x.name.length > 0) ?? []
 
@@ -109,35 +117,68 @@ export async function POST(req: Request) {
     const rowsReps = sortedDays.flatMap((d) =>
       exercises.map((ex, index) => ({
         program_day_id: d.id,
+        catalog_exercise_id: ex.catalogExerciseId,
         name: ex.name,
         target_reps: ex.target,
+        unit: ex.unit,
+        weight: ex.weight,
         sort_order: index + 1,
       }))
     )
 
-    const { error: exErr1 } = await supabase.from("day_exercises").insert(rowsReps)
-    if (exErr1) {
-      const rowsAlt = sortedDays.flatMap((d) =>
-        exercises.map((ex, index) => ({
-          program_day_id: d.id,
-          name: ex.name,
-          target: ex.target,
-          unit: ex.unit,
-          weight: null,
-          sort_order: index + 1,
-        }))
-      )
+    const rowsAlt = sortedDays.flatMap((d) =>
+      exercises.map((ex, index) => ({
+        program_day_id: d.id,
+        catalog_exercise_id: ex.catalogExerciseId,
+        name: ex.name,
+        target: ex.target,
+        unit: ex.unit,
+        weight: ex.weight,
+        sort_order: index + 1,
+      }))
+    )
 
-      const { error: exErr2 } = await supabase.from("day_exercises").insert(rowsAlt)
-      if (exErr2) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: `[${SUPABASE_MODE}] ${exErr2.message ?? exErr1.message ?? "failed to create exercises"}`,
-          },
-          { status: 500 }
-        )
+    const rowsRepsNoCatalog = sortedDays.flatMap((d) =>
+      exercises.map((ex, index) => ({
+        program_day_id: d.id,
+        name: ex.name,
+        target_reps: ex.target,
+        unit: ex.unit,
+        weight: ex.weight,
+        sort_order: index + 1,
+      }))
+    )
+
+    const rowsAltNoCatalog = sortedDays.flatMap((d) =>
+      exercises.map((ex, index) => ({
+        program_day_id: d.id,
+        name: ex.name,
+        target: ex.target,
+        unit: ex.unit,
+        weight: ex.weight,
+        sort_order: index + 1,
+      }))
+    )
+
+    let exerciseInsertError: { message?: string } | null = null
+    const exerciseInsertAttempts = [rowsReps, rowsAlt, rowsRepsNoCatalog, rowsAltNoCatalog]
+    for (const attemptRows of exerciseInsertAttempts) {
+      const { error } = await supabase.from("day_exercises").insert(attemptRows)
+      if (!error) {
+        exerciseInsertError = null
+        break
       }
+      exerciseInsertError = error
+    }
+
+    if (exerciseInsertError) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `[${SUPABASE_MODE}] ${exerciseInsertError.message ?? "failed to create exercises"}`,
+        },
+        { status: 500 }
+      )
     }
 
     const { error: stateErr } = await supabase.from("user_state").upsert(

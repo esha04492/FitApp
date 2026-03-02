@@ -1,10 +1,13 @@
 ﻿"use client"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { loadExerciseCatalog, type CatalogExercise } from "../lib/catalog"
 
-type BuilderExercise = {
+export type BuilderExercise = {
+  catalogExerciseId: number
   name: string
   target: number
   unit: "reps" | "steps"
+  weight: number
 }
 
 export default function CustomProgramBuilder(props: {
@@ -14,22 +17,58 @@ export default function CustomProgramBuilder(props: {
   const { onBack, onCreate } = props
 
   const [programName, setProgramName] = useState("My program")
-  const [exercises, setExercises] = useState<BuilderExercise[]>([{ name: "", target: 10, unit: "reps" }])
+  const [catalog, setCatalog] = useState<CatalogExercise[]>([])
+  const [catalogLoading, setCatalogLoading] = useState(true)
+  const [catalogError, setCatalogError] = useState<string | null>(null)
+  const [exercises, setExercises] = useState<
+    Array<{
+      catalogExerciseId: number | null
+      name: string
+      target: number
+      unit: "reps" | "steps"
+      weight: number
+    }>
+  >([{ catalogExerciseId: null, name: "", target: 0, unit: "reps", weight: 1 }])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  useEffect(() => {
+    const run = async () => {
+      setCatalogLoading(true)
+      const result = await loadExerciseCatalog()
+      if (result.error) {
+        setCatalog([])
+        setCatalogError(result.error)
+      } else {
+        setCatalog(result.data)
+        setCatalogError(null)
+      }
+      setCatalogLoading(false)
+    }
+    run()
+  }, [])
+
   const canCreate = useMemo(() => {
+    if (catalogLoading) return false
     if (!programName.trim()) return false
     if (exercises.length === 0) return false
-    return exercises.every((ex) => ex.name.trim().length > 0 && ex.target > 0)
-  }, [programName, exercises])
+    const selectedIds = exercises
+      .map((ex) => ex.catalogExerciseId)
+      .filter((id): id is number => id != null)
+    const uniqueCount = new Set(selectedIds).size
+    if (selectedIds.length !== uniqueCount) return false
+    return exercises.every((ex) => ex.catalogExerciseId != null && ex.name.trim().length > 0 && ex.target > 0)
+  }, [catalogLoading, programName, exercises])
 
-  const updateExercise = (index: number, patch: Partial<BuilderExercise>) => {
+  const updateExercise = (
+    index: number,
+    patch: Partial<{ catalogExerciseId: number | null; name: string; target: number; unit: "reps" | "steps"; weight: number }>
+  ) => {
     setExercises((prev) => prev.map((ex, i) => (i === index ? { ...ex, ...patch } : ex)))
   }
 
   const addExercise = () => {
-    setExercises((prev) => [...prev, { name: "", target: 10, unit: "reps" }])
+    setExercises((prev) => [...prev, { catalogExerciseId: null, name: "", target: 0, unit: "reps", weight: 1 }])
   }
 
   const removeExercise = (index: number) => {
@@ -45,17 +84,63 @@ export default function CustomProgramBuilder(props: {
     })
   }
 
+  const selectExercise = (index: number, selectedIdRaw: string) => {
+    const selectedId = Number(selectedIdRaw)
+    if (!Number.isFinite(selectedId)) {
+      updateExercise(index, { catalogExerciseId: null, name: "", unit: "reps", target: 0, weight: 1 })
+      return
+    }
+
+    const selected = catalog.find((x) => x.id === selectedId)
+    if (!selected) return
+
+    const duplicateIndex = exercises.findIndex((x, i) => i !== index && x.catalogExerciseId === selected.id)
+    if (duplicateIndex !== -1) {
+      setError("This exercise is already selected")
+      return
+    }
+
+    setError(null)
+    setExercises((prev) =>
+      prev.map((row, i) =>
+        i === index
+          ? {
+              ...row,
+              catalogExerciseId: selected.id,
+              name: selected.label,
+              unit: selected.unit,
+              weight: selected.weight,
+              target: row.target > 0 ? row.target : selected.default_target,
+            }
+          : row
+      )
+    )
+  }
+
   const submit = async () => {
     if (!canCreate || loading) return
     setLoading(true)
     setError(null)
+
+    const payloadExercises = exercises
+      .filter((ex): ex is BuilderExercise => ex.catalogExerciseId != null)
+      .map((ex) => ({
+        catalogExerciseId: ex.catalogExerciseId,
+        name: ex.name.trim(),
+        target: Math.max(1, Number(ex.target) || 0),
+        unit: ex.unit,
+        weight: ex.weight,
+      }))
+
     const result = await onCreate({
       name: programName.trim(),
-      exercises: exercises.map((ex) => ({ ...ex, name: ex.name.trim() })),
+      exercises: payloadExercises,
     })
+
     if (!result.ok) {
       setError(result.error ?? "Could not create program")
     }
+
     setLoading(false)
   }
 
@@ -72,6 +157,9 @@ export default function CustomProgramBuilder(props: {
           />
         </div>
       </div>
+
+      {catalogLoading ? <div className="text-xs text-neutral-400">Loading exercises...</div> : null}
+      {catalogError ? <div className="text-xs text-red-200 break-words">{catalogError}</div> : null}
 
       <div className="space-y-3">
         {exercises.map((ex, index) => (
@@ -94,12 +182,20 @@ export default function CustomProgramBuilder(props: {
                   Duplicate
                 </button>
               </div>
-              <input
-                value={ex.name}
-                onChange={(e) => updateExercise(index, { name: e.target.value })}
-                placeholder="Exercise"
+
+              <select
+                value={ex.catalogExerciseId == null ? "" : String(ex.catalogExerciseId)}
+                onChange={(e) => selectExercise(index, e.target.value)}
                 className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-100 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
-              />
+              >
+                <option value="">Select exercise</option>
+                {catalog.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+
               <div className="grid grid-cols-2 gap-2">
                 <input
                   type="number"
@@ -108,14 +204,11 @@ export default function CustomProgramBuilder(props: {
                   onChange={(e) => updateExercise(index, { target: Math.max(0, Number(e.target.value) || 0) })}
                   className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-100 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
                 />
-                <select
+                <input
                   value={ex.unit}
-                  onChange={(e) => updateExercise(index, { unit: e.target.value as "reps" | "steps" })}
-                  className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-100 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
-                >
-                  <option value="reps">reps</option>
-                  <option value="steps">steps</option>
-                </select>
+                  readOnly
+                  className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-300 outline-none"
+                />
               </div>
             </div>
           </div>
