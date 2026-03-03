@@ -1,4 +1,5 @@
 ﻿"use client"
+import { useState } from "react"
 
 type LeaderboardRow = {
   rank: number
@@ -26,7 +27,13 @@ export default function LeaderboardView(props: {
     global: string
     loading: string
     noData: string
+    howItWorks: string
+    howItWorksTitle: string
+    howItWorksBody: string
+    ok: string
+    examplesTitle: string
   }
+  examples?: string[]
 }) {
   const {
     myTotalStars,
@@ -40,7 +47,9 @@ export default function LeaderboardView(props: {
     onDisplayNameChange,
     onSaveDisplayName,
     labels,
+    examples = [],
   } = props
+  const [showHowItWorks, setShowHowItWorks] = useState(false)
 
   const l = labels ?? {
     leaderboard: "Leaderboard",
@@ -50,6 +59,12 @@ export default function LeaderboardView(props: {
     global: "Global leaderboard",
     loading: "Loading leaderboard...",
     noData: "No data yet.",
+    howItWorks: "How it works?",
+    howItWorksTitle: "How stars are calculated",
+    howItWorksBody:
+      "Stars are calculated with a unified rule. The app converts your completed amount into stars using exercise rate. For custom exercises the rate is based on your daily target.",
+    ok: "OK",
+    examplesTitle: "Examples",
   }
 
   return (
@@ -65,6 +80,14 @@ export default function LeaderboardView(props: {
       </div>
 
       <div className="space-y-4">
+        <button
+          type="button"
+          onClick={() => setShowHowItWorks(true)}
+          className="h-10 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition hover:bg-white/10"
+        >
+          {l.howItWorks}
+        </button>
+
         {showNameForm ? (
           <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
             <div className="text-sm font-semibold">{l.chooseName}</div>
@@ -143,6 +166,30 @@ export default function LeaderboardView(props: {
           </div>
         </div>
       </div>
+
+      {showHowItWorks ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
+          <div className="w-full max-w-md rounded-3xl border border-white/10 bg-neutral-900 p-4 shadow-2xl">
+            <div className="text-base font-semibold text-neutral-100">{l.howItWorksTitle}</div>
+            <p className="mt-2 text-sm leading-relaxed text-neutral-300">{l.howItWorksBody}</p>
+            <div className="mt-3 text-sm font-semibold text-neutral-100">{l.examplesTitle}</div>
+            <div className="mt-2 space-y-1 text-sm text-neutral-300">
+              {examples.map((line, idx) => (
+                <div key={idx}>{line}</div>
+              ))}
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowHowItWorks(false)}
+                className="h-10 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition hover:bg-white/10"
+              >
+                {l.ok}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   )
 }

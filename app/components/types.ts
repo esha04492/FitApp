@@ -8,6 +8,8 @@ export type Exercise = {
   unit?: string
   weight?: number | null
   default_target?: number | null
+  is_user_added?: boolean
+  is_one_off?: boolean
 }
 
 export type HistoryEntry = {

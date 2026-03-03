@@ -67,6 +67,11 @@ const I18N: Record<
     openInsideTitle: string
     openInsideBody: string
     loading: string
+    howItWorks: string
+    howItWorksTitle: string
+    howItWorksBody: string
+    examplesTitle: string
+    ok: string
   }
 > = {
   ru: {
@@ -92,6 +97,12 @@ const I18N: Record<
     openInsideTitle: "Открой внутри Telegram",
     openInsideBody: "Это приложение нужно открывать из Telegram-бота.",
     loading: "Загрузка...",
+    howItWorks: "Как это работает?",
+    howItWorksTitle: "Как начисляются звёзды",
+    howItWorksBody:
+      "Звёзды считаются по единому правилу: сколько сделал, столько получаешь по курсу упражнения. Для кастомных упражнений курс зависит от выбранной дневной нормы.",
+    examplesTitle: "Примеры",
+    ok: "Ок",
   },
   en: {
     tabToday: "Today",
@@ -116,6 +127,12 @@ const I18N: Record<
     openInsideTitle: "Open inside Telegram",
     openInsideBody: "This app must be opened from Telegram bot.",
     loading: "Loading...",
+    howItWorks: "How it works?",
+    howItWorksTitle: "How stars are calculated",
+    howItWorksBody:
+      "Stars use one simple rule: your completed amount is converted by exercise rate. For custom exercises, rate is based on your daily target.",
+    examplesTitle: "Examples",
+    ok: "OK",
   },
 }
 
@@ -448,6 +465,7 @@ export default function Home() {
   const [presetProgramRows, setPresetProgramRows] = useState<Array<{ id: string | number; name: string }>>([])
 
   const [day, setDay] = useState(1)
+  const [currentProgramDayId, setCurrentProgramDayId] = useState<string | null>(null)
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [progress, setProgress] = useState<Record<string, number>>({})
   const [customInput, setCustomInput] = useState<Record<string, string>>({})
@@ -722,18 +740,30 @@ export default function Home() {
 
     if (pderr || !pd) {
       setDbg("ERROR program_day: " + (pderr?.message ?? "not found"))
+      setCurrentProgramDayId(null)
       setExercises([])
       setProgress({})
       return
     }
+    setCurrentProgramDayId(String(pd.id))
 
     let exList: Exercise[] = []
-    const { data: exs, error: exerr } = await supabase
+    const withFlagsQuery = await supabase
       .from("day_exercises")
-      .select("id,name,target_reps,sort_order,catalog_exercise_id")
+      .select("id,name,target_reps,sort_order,catalog_exercise_id,is_user_added,is_one_off")
       .eq("program_day_id", pd.id)
       .order("sort_order")
-
+    let exs: Array<Record<string, unknown>> | null = (withFlagsQuery.data as Array<Record<string, unknown>> | null) ?? null
+    let exerr = withFlagsQuery.error
+    if (exerr) {
+      const fallbackQuery = await supabase
+        .from("day_exercises")
+        .select("id,name,target_reps,sort_order,catalog_exercise_id")
+        .eq("program_day_id", pd.id)
+        .order("sort_order")
+      exs = (fallbackQuery.data as Array<Record<string, unknown>> | null) ?? null
+      exerr = fallbackQuery.error
+    }
     if (exerr) {
       setDbg("ERROR day_exercises: " + exerr.message)
       setExercises([])
@@ -858,6 +888,7 @@ export default function Home() {
 
       if (!state) {
         setDay(1)
+        setCurrentProgramDayId(null)
         setProgramId(null)
         setShowProgramMenu(true)
         await loadPresetPrograms()
@@ -1239,6 +1270,130 @@ export default function Home() {
     }
   }
 
+  const addExerciseFromToday = async (payload: {
+    catalogExerciseId: number
+    target: number
+    displayName?: string
+    scope: "today" | "same_type" | "every_day"
+  }): Promise<{ ok: boolean; error?: string }> => {
+    if (programId == null || currentProgramDayId == null) return { ok: false, error: "Program day is not loaded" }
+    const uid = await getOrCreateUserId()
+    const catalogMap = await ensureCatalogMeta()
+    const meta = catalogMap[payload.catalogExerciseId]
+    if (!meta) return { ok: false, error: "Catalog exercise not found" }
+
+    const target = Math.max(1, Number(payload.target) || 0)
+    if (target <= 0) return { ok: false, error: "Target must be greater than zero" }
+
+    const isCustom = meta.key === "custom_time" || meta.key === "custom_reps"
+    const name = (payload.displayName ?? "").trim() || (isCustom ? "" : meta.label)
+    if (isCustom && !name) return { ok: false, error: "Custom exercise name is required" }
+
+    let targetDayIds: string[] = []
+    if (payload.scope === "today") {
+      targetDayIds = [currentProgramDayId]
+    } else {
+      const { data: dayRows, error: dayErr } = await supabase
+        .from("program_days")
+        .select("id,day_number")
+        .eq("program_id", programId)
+      if (dayErr) return { ok: false, error: dayErr.message }
+      const parity = day % 2
+      targetDayIds = (dayRows ?? [])
+        .filter((r) => (payload.scope === "every_day" ? true : Number(r.day_number) % 2 === parity))
+        .map((r) => String(r.id))
+    }
+    if (targetDayIds.length === 0) return { ok: false, error: "No target days found" }
+
+    const { data: existingRows, error: existingErr } = await supabase
+      .from("day_exercises")
+      .select("program_day_id,sort_order")
+      .in("program_day_id", targetDayIds)
+    if (existingErr) return { ok: false, error: existingErr.message }
+    const maxSortByDay = new Map<string, number>()
+    ;(existingRows ?? []).forEach((r) => {
+      const key = String(r.program_day_id)
+      const current = maxSortByDay.get(key) ?? 0
+      maxSortByDay.set(key, Math.max(current, Number(r.sort_order) || 0))
+    })
+
+    const baseRows = targetDayIds.map((dayId) => ({
+      program_day_id: dayId,
+      catalog_exercise_id: payload.catalogExerciseId,
+      name,
+      target_reps: target,
+      sort_order: (maxSortByDay.get(dayId) ?? 0) + 1,
+    }))
+
+    const rowsWithFlags = baseRows.map((row) => ({
+      ...row,
+      is_user_added: true,
+      is_one_off: payload.scope === "today",
+    }))
+
+    const insertWithFlags = await supabase.from("day_exercises").insert(rowsWithFlags)
+    if (insertWithFlags.error) {
+      const insertWithoutFlags = await supabase.from("day_exercises").insert(baseRows)
+      if (insertWithoutFlags.error) return { ok: false, error: insertWithoutFlags.error.message }
+    }
+
+    await loadDay(uid, programId, day)
+    return { ok: true }
+  }
+
+  const deleteAddedExercise = async (payload: {
+    exerciseId: string
+    catalogExerciseId: number | null
+    name: string
+    target: number
+    isOneOff: boolean
+    scope: "today" | "same_type_or_every_day"
+  }): Promise<{ ok: boolean; error?: string }> => {
+    if (programId == null) return { ok: false, error: "Program is not selected" }
+    const uid = await getOrCreateUserId()
+
+    if (payload.scope === "today" || payload.isOneOff) {
+      const { error } = await supabase.from("day_exercises").delete().eq("id", payload.exerciseId)
+      if (error) return { ok: false, error: error.message }
+      await loadDay(uid, programId, day)
+      return { ok: true }
+    }
+
+    const { data: programDays, error: dayErr } = await supabase.from("program_days").select("id").eq("program_id", programId)
+    if (dayErr) return { ok: false, error: dayErr.message }
+    const dayIds = (programDays ?? []).map((x) => String(x.id))
+    if (dayIds.length === 0) return { ok: false, error: "Program days not found" }
+
+    let query = supabase
+      .from("day_exercises")
+      .delete()
+      .in("program_day_id", dayIds)
+      .eq("name", payload.name)
+      .eq("target_reps", payload.target)
+    if (payload.catalogExerciseId != null) {
+      query = query.eq("catalog_exercise_id", payload.catalogExerciseId)
+    }
+    const withFlagDelete = await query.eq("is_user_added", true)
+    if (withFlagDelete.error && withFlagDelete.error.message?.includes("is_user_added")) {
+      let fallback = supabase
+        .from("day_exercises")
+        .delete()
+        .in("program_day_id", dayIds)
+        .eq("name", payload.name)
+        .eq("target_reps", payload.target)
+      if (payload.catalogExerciseId != null) {
+        fallback = fallback.eq("catalog_exercise_id", payload.catalogExerciseId)
+      }
+      const fallbackDelete = await fallback
+      if (fallbackDelete.error) return { ok: false, error: fallbackDelete.error.message }
+    } else if (withFlagDelete.error) {
+      return { ok: false, error: withFlagDelete.error.message }
+    }
+
+    await loadDay(uid, programId, day)
+    return { ok: true }
+  }
+
   const nextDay = async (force = false) => {
     if (!allCompleted && !force) return
     const uid = await getOrCreateUserId()
@@ -1463,6 +1618,7 @@ export default function Home() {
                 : meta.label,
           unit: meta.unit,
           defaultTarget: meta.defaultTarget,
+          key: meta.key,
         }))
         .sort((a, b) => a.label.localeCompare(b.label)),
     [catalogMetaById, lang]
@@ -1483,6 +1639,38 @@ export default function Home() {
       }),
     [presetProgramRows, lang]
   )
+
+  const howItWorksExamples = useMemo(() => {
+    const values = Object.values(catalogMetaById)
+    const preferred = ["push_ups", "walking", "pull_ups", "squats", "abs"]
+      .map((k) => values.find((x) => x.key === k))
+      .filter((x): x is { weight: number; unit: string; defaultTarget: number; label: string; key: string } => Boolean(x))
+    const picked = preferred.length > 0 ? preferred : values.slice(0, 5)
+    const unitLabel = (unit: string) =>
+      unit === "steps" ? (lang === "ru" ? "шагов" : "steps") : unit === "minutes" ? (lang === "ru" ? "мин" : "min") : lang === "ru" ? "повторов" : "reps"
+
+    const lines = picked.slice(0, 5).map((item) => {
+      const label =
+        lang === "ru"
+          ? item.key === "custom_time"
+            ? "Своё упражнение (время)"
+            : item.key === "custom_reps"
+              ? "Своё упражнение (повторы)"
+              : item.label
+          : item.key === "custom_time"
+            ? "Custom (time)"
+            : item.key === "custom_reps"
+              ? "Custom (reps)"
+              : item.label
+      return `${label}: 1★ = ${Math.round(item.weight * 100) / 100} ${unitLabel(item.unit)}`
+    })
+
+    const hasCustomTimeLine = lines.some((x) => x.toLowerCase().includes("custom (time)") || x.toLowerCase().includes("своё упражнение (время)"))
+    if (!hasCustomTimeLine) {
+      lines.push(`${lang === "ru" ? "Своё упражнение (время)" : "Custom time"}: 1★ = 1 ${lang === "ru" ? "мин" : "min"}`)
+    }
+    return lines.slice(0, 6)
+  }, [catalogMetaById, lang])
 
   const stats = useMemo(() => {
     const totalDays = history.length
@@ -1574,6 +1762,8 @@ export default function Home() {
             currentStreak={stats.streak}
             pretty={pretty}
             catalogOptions={editCatalogOptions}
+            onAddExercise={addExerciseFromToday}
+            onDeleteExercise={deleteAddedExercise}
             editExercise={editExercise}
           />
         ) : tab === "stats" ? (
@@ -1618,6 +1808,7 @@ export default function Home() {
               sessionStorage.removeItem("tg_context")
 
               setDay(1)
+              setCurrentProgramDayId(null)
               setProgramId(null)
               setShowProgramMenu(true)
               setShowCustomBuilder(false)
@@ -1648,6 +1839,7 @@ export default function Home() {
             displayNameError={leaderboardDisplayNameError}
             onDisplayNameChange={setLeaderboardDisplayName}
             onSaveDisplayName={saveLeaderboardDisplayName}
+            examples={howItWorksExamples}
             labels={{
               leaderboard: I18N[lang].leaderboardTitle,
               totalStarTitle: I18N[lang].totalStar,
@@ -1656,6 +1848,11 @@ export default function Home() {
               global: I18N[lang].globalLeaderboard,
               loading: I18N[lang].loadingLeaderboard,
               noData: I18N[lang].noData,
+              howItWorks: I18N[lang].howItWorks,
+              howItWorksTitle: I18N[lang].howItWorksTitle,
+              howItWorksBody: I18N[lang].howItWorksBody,
+              examplesTitle: I18N[lang].examplesTitle,
+              ok: I18N[lang].ok,
             }}
           />
         )}

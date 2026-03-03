@@ -19,7 +19,21 @@ export default function TodayView(props: {
   allCompleted: boolean
   dayTotals: { pct: number }
   pretty: (n: number) => string
-  catalogOptions: Array<{ id: number; label: string; unit: string; defaultTarget: number }>
+  catalogOptions: Array<{ id: number; label: string; unit: string; defaultTarget: number; key?: string }>
+  onAddExercise: (payload: {
+    catalogExerciseId: number
+    target: number
+    displayName?: string
+    scope: "today" | "same_type" | "every_day"
+  }) => Promise<{ ok: boolean; error?: string }>
+  onDeleteExercise: (payload: {
+    exerciseId: string
+    catalogExerciseId: number | null
+    name: string
+    target: number
+    isOneOff: boolean
+    scope: "today" | "same_type_or_every_day"
+  }) => Promise<{ ok: boolean; error?: string }>
   editExercise: (payload: {
     exerciseId: string
     originalName: string
@@ -42,6 +56,16 @@ export default function TodayView(props: {
   const [editApplyTo, setEditApplyTo] = useState<"today" | "program">("today")
   const [editError, setEditError] = useState<string | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
+  const [showAddExercise, setShowAddExercise] = useState(false)
+  const [addCatalogId, setAddCatalogId] = useState("")
+  const [addTarget, setAddTarget] = useState("1")
+  const [addDisplayName, setAddDisplayName] = useState("")
+  const [addScope, setAddScope] = useState<"today" | "same_type" | "every_day">("today")
+  const [addError, setAddError] = useState<string | null>(null)
+  const [savingAdd, setSavingAdd] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<Exercise | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deletingExerciseId, setDeletingExerciseId] = useState<string | null>(null)
 
   const {
     lang = "ru",
@@ -59,6 +83,8 @@ export default function TodayView(props: {
     dayTotals,
     pretty,
     catalogOptions,
+    onAddExercise,
+    onDeleteExercise,
     editExercise,
   } = props
 
@@ -108,8 +134,20 @@ export default function TodayView(props: {
           applyTo: "Применить изменения к:",
           todayOnly: "Только сегодня",
           wholeProgram: "Вся программа",
+          sameDayType: "Каждый такой же день",
+          everyDay: "Каждый день",
+          scope: "Область применения:",
           cancel: "Отмена",
           save: "Сохранить",
+          addExercise: "Добавить упражнение",
+          addExerciseTitle: "Добавить упражнение",
+          selectExercise: "Выбери упражнение",
+          addNameOptional: "Название (необязательно)",
+          addNameRequired: "Название (обязательно для custom)",
+          targetRequired: "Нужно указать цель",
+          customNameRequired: "Для кастомного упражнения нужно название",
+          delete: "Удалить",
+          deleteConfirm: "Удалить это упражнение из программы?",
           onboardingTitle: "FitStreak — 100 дней дисциплины",
           onboardingBody:
             "Это приложение для 100-дневного челленджа. Каждый день отмечай выполнение упражнений, следи за серией и старайся не прерывать её.\nМожно пропустить день, но серия обнулится.\nЖми «Следующий день», когда закроешь все упражнения.",
@@ -138,8 +176,20 @@ export default function TodayView(props: {
           applyTo: "Apply changes to:",
           todayOnly: "Today only",
           wholeProgram: "Whole program",
+          sameDayType: "Every same day type",
+          everyDay: "Every day",
+          scope: "Scope:",
           cancel: "Cancel",
           save: "Save",
+          addExercise: "Add exercise",
+          addExerciseTitle: "Add exercise",
+          selectExercise: "Select exercise",
+          addNameOptional: "Display name (optional)",
+          addNameRequired: "Display name (required for custom)",
+          targetRequired: "Target is required",
+          customNameRequired: "Custom exercise name is required",
+          delete: "Delete",
+          deleteConfirm: "Delete this exercise from program?",
           onboardingTitle: "FitStreak - 100 days of discipline",
           onboardingBody:
             "This app is a 100-day challenge tracker. Mark your exercises daily, build your streak, and stay consistent.\nYou can skip a day, but your streak will reset.\nTap Next day when all exercises are done. Let us go.",
@@ -205,6 +255,62 @@ export default function TodayView(props: {
 
     setSavingEdit(false)
     setEditExerciseId(null)
+  }
+
+  const selectedAddCatalogItem =
+    addCatalogId.length > 0 ? catalogOptions.find((x) => String(x.id) === addCatalogId) ?? null : null
+  const isAddCustom = selectedAddCatalogItem?.key === "custom_time" || selectedAddCatalogItem?.key === "custom_reps"
+
+  const submitAddExercise = async () => {
+    if (!selectedAddCatalogItem || savingAdd) return
+    const target = Math.max(1, Number(addTarget) || 0)
+    if (target <= 0) {
+      setAddError(tx.targetRequired)
+      return
+    }
+    if (isAddCustom && !addDisplayName.trim()) {
+      setAddError(tx.customNameRequired)
+      return
+    }
+    setSavingAdd(true)
+    setAddError(null)
+    const result = await onAddExercise({
+      catalogExerciseId: selectedAddCatalogItem.id,
+      target,
+      displayName: addDisplayName.trim() || undefined,
+      scope: addScope,
+    })
+    if (!result.ok) {
+      setAddError(result.error ?? tx.updateFailed)
+      setSavingAdd(false)
+      return
+    }
+    setSavingAdd(false)
+    setShowAddExercise(false)
+    setAddCatalogId("")
+    setAddTarget("1")
+    setAddDisplayName("")
+    setAddScope("today")
+  }
+
+  const deleteExerciseNow = async (ex: Exercise, scope: "today" | "same_type_or_every_day") => {
+    if (deletingExerciseId) return
+    setDeletingExerciseId(ex.id)
+    setDeleteError(null)
+    const result = await onDeleteExercise({
+      exerciseId: ex.id,
+      catalogExerciseId: ex.catalog_exercise_id ?? null,
+      name: ex.name,
+      target: ex.target_reps,
+      isOneOff: Boolean(ex.is_one_off),
+      scope,
+    })
+    setDeletingExerciseId(null)
+    if (!result.ok) {
+      setDeleteError(result.error ?? tx.updateFailed)
+      return
+    }
+    setPendingDelete(null)
   }
 
   return (
@@ -307,6 +413,23 @@ export default function TodayView(props: {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {ex.is_user_added ? (
+                    <button
+                      type="button"
+                      disabled={deletingExerciseId === ex.id}
+                      onClick={() => {
+                        if (ex.is_one_off) {
+                          void deleteExerciseNow(ex, "today")
+                          return
+                        }
+                        setPendingDelete(ex)
+                        setDeleteError(null)
+                      }}
+                      className="h-8 rounded-xl border border-red-400/30 bg-red-500/15 px-2 text-xs text-red-200 transition hover:bg-red-500/25 disabled:opacity-60"
+                    >
+                      {tx.delete}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => openEdit(ex)}
@@ -407,6 +530,19 @@ export default function TodayView(props: {
             </div>
           )
         })}
+      </div>
+
+      <div className="mt-4">
+        <button
+          type="button"
+          onClick={() => {
+            setShowAddExercise(true)
+            setAddError(null)
+          }}
+          className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition active:scale-[0.99] hover:bg-white/10"
+        >
+          + {tx.addExercise}
+        </button>
       </div>
 
       <div className="mt-6">
@@ -535,6 +671,120 @@ export default function TodayView(props: {
                 className="h-10 rounded-xl border border-emerald-400/20 bg-emerald-500/15 px-4 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:opacity-60"
               >
                 {tx.save}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showAddExercise ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
+          <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-neutral-900 p-4 shadow-2xl">
+            <div className="text-sm font-semibold text-neutral-100">{tx.addExerciseTitle}</div>
+            <div className="mt-3 space-y-2">
+              <select
+                value={addCatalogId}
+                onChange={(e) => {
+                  setAddCatalogId(e.target.value)
+                  const selected = catalogOptions.find((x) => String(x.id) === e.target.value)
+                  if (selected) {
+                    setAddTarget(String(Math.max(1, Number(selected.defaultTarget) || 1)))
+                    if (selected.key !== "custom_time" && selected.key !== "custom_reps") {
+                      setAddDisplayName("")
+                    }
+                  }
+                }}
+                className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-100 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
+              >
+                <option value="">{tx.selectExercise}</option>
+                {catalogOptions.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label} ({item.unit})
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                inputMode="numeric"
+                value={addTarget}
+                onChange={(e) => setAddTarget(e.target.value)}
+                placeholder={tx.anyNumber}
+                className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-100 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
+              />
+              <input
+                value={addDisplayName}
+                onChange={(e) => setAddDisplayName(e.target.value)}
+                placeholder={isAddCustom ? tx.addNameRequired : tx.addNameOptional}
+                className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-100 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
+              />
+            </div>
+
+            <div className="mt-4">
+              <div className="text-xs text-neutral-400">{tx.scope}</div>
+              <label className="mt-2 flex items-center gap-2 text-sm text-neutral-200">
+                <input type="radio" name="addScope" checked={addScope === "today"} onChange={() => setAddScope("today")} />
+                <span>{tx.todayOnly}</span>
+              </label>
+              <label className="mt-1 flex items-center gap-2 text-sm text-neutral-200">
+                <input type="radio" name="addScope" checked={addScope === "same_type"} onChange={() => setAddScope("same_type")} />
+                <span>{tx.sameDayType}</span>
+              </label>
+              <label className="mt-1 flex items-center gap-2 text-sm text-neutral-200">
+                <input type="radio" name="addScope" checked={addScope === "every_day"} onChange={() => setAddScope("every_day")} />
+                <span>{tx.everyDay}</span>
+              </label>
+            </div>
+
+            {addError ? <div className="mt-3 text-xs text-red-200 break-words">{addError}</div> : null}
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (savingAdd) return
+                  setShowAddExercise(false)
+                }}
+                className="h-10 rounded-xl border border-white/10 bg-white/5 px-4 text-sm text-neutral-100 transition hover:bg-white/10"
+              >
+                {tx.cancel}
+              </button>
+              <button
+                type="button"
+                disabled={savingAdd}
+                onClick={submitAddExercise}
+                className="h-10 rounded-xl border border-emerald-400/20 bg-emerald-500/15 px-4 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:opacity-60"
+              >
+                {tx.save}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {pendingDelete ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
+          <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-neutral-900 p-4 shadow-2xl">
+            <div className="text-sm font-semibold text-neutral-100">{tx.deleteConfirm}</div>
+            {deleteError ? <div className="mt-3 text-xs text-red-200 break-words">{deleteError}</div> : null}
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (deletingExerciseId) return
+                  setPendingDelete(null)
+                  setDeleteError(null)
+                }}
+                className="h-10 rounded-xl border border-white/10 bg-white/5 px-4 text-sm text-neutral-100 transition hover:bg-white/10"
+              >
+                {tx.cancel}
+              </button>
+              <button
+                type="button"
+                disabled={deletingExerciseId != null}
+                onClick={() => void deleteExerciseNow(pendingDelete, "same_type_or_every_day")}
+                className="h-10 rounded-xl border border-red-400/20 bg-red-500/15 px-4 text-sm font-semibold text-red-100 transition hover:bg-red-500/20 disabled:opacity-60"
+              >
+                {tx.delete}
               </button>
             </div>
           </div>
