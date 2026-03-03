@@ -57,6 +57,7 @@ export default function CustomProgramBuilder(props: {
           customTargetMinutes: "Минуты",
           customTargetReps: "Повторения",
           fullCompletionHint: "Полностью выполненная норма ≈ 50 ★",
+          customTimeHint: "1 ★ = 1 мин",
         }
       : {
           title: "Create your plan",
@@ -78,6 +79,7 @@ export default function CustomProgramBuilder(props: {
           customTargetMinutes: "Minutes",
           customTargetReps: "Reps",
           fullCompletionHint: "Full completion ≈ 50 ★",
+          customTimeHint: "1 ★ = 1 min",
         }
 
   const trExerciseName = (name: string) => {
@@ -309,7 +311,10 @@ export default function CustomProgramBuilder(props: {
                   className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-300 outline-none"
                 />
               </div>
-              {(ex.catalogKey === "custom_time" || ex.catalogKey === "custom_reps") ? (
+              {ex.catalogKey === "custom_time" ? (
+                <div className="text-[11px] text-neutral-400">{tx.customTimeHint}</div>
+              ) : null}
+              {ex.catalogKey === "custom_reps" ? (
                 <div className="text-[11px] text-neutral-400">{tx.fullCompletionHint}</div>
               ) : null}
             </div>
