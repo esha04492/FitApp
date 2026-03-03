@@ -1270,56 +1270,101 @@ export default function Home() {
     }
 
     // 1b) write per-exercise breakdown
-    const breakdownRows = exercises.map((ex) => ({
-      ...(ex.catalog_key === "custom_time"
-        ? { unit_override: "minutes" as const, weight_override: 1 }
-        : ex.catalog_key === "custom_reps"
-          ? { unit_override: "reps" as const, weight_override: Math.max(1, ex.target_reps / 50) }
-          : {}),
-      user_id: uid,
-      program_id: programId,
-      day_number: day,
-      local_date: entryDate,
-      exercise_name: ex.name,
-      reps_done: progress[ex.id] || 0,
-      reps_target: ex.target_reps,
-      day_exercise_id: ex.id,
-      catalog_exercise_id: ex.catalog_exercise_id ?? null,
-    }))
+    const missingCatalogIds = exercises.filter((ex) => ex.catalog_exercise_id == null).map((ex) => ex.id)
+    const catalogByExerciseId = new Map<string, number>()
+    if (missingCatalogIds.length > 0) {
+      const { data: dayExerciseRows } = await supabase
+        .from("day_exercises")
+        .select("id,catalog_exercise_id")
+        .in("id", missingCatalogIds)
+      ;(dayExerciseRows ?? []).forEach((row) => {
+        const catalogId = Number((row as { catalog_exercise_id?: number | null }).catalog_exercise_id)
+        if (Number.isFinite(catalogId)) {
+          catalogByExerciseId.set(String(row.id), catalogId)
+        }
+      })
+    }
 
-    const { error: berr } = await supabase
-      .from("user_day_history_exercises")
-      .upsert(breakdownRows, { onConflict: "user_id,program_id,day_number,exercise_name" })
-    if (berr) {
-      const legacyBreakdownRows = exercises.map((ex) => ({
+    const breakdownRows = exercises.map((ex) => {
+      const repsTarget = Math.max(1, Number(ex.target_reps) || 0)
+      const isCustomTime = ex.catalog_key === "custom_time"
+      const isCustomReps = ex.catalog_key === "custom_reps"
+      const resolvedCatalogId =
+        ex.catalog_exercise_id != null ? ex.catalog_exercise_id : (catalogByExerciseId.get(ex.id) ?? null)
+      return {
         user_id: uid,
         program_id: programId,
         day_number: day,
         local_date: entryDate,
         exercise_name: ex.name,
         reps_done: progress[ex.id] || 0,
-        reps_target: ex.target_reps,
-      }))
-      const { error: legacyUpsertErr } = await supabase
+        reps_target: repsTarget,
+        day_exercise_id: ex.id,
+        catalog_exercise_id: resolvedCatalogId,
+        unit_override: isCustomTime ? ("minutes" as const) : isCustomReps ? ("reps" as const) : null,
+        weight_override: isCustomTime ? 1 : isCustomReps ? Math.max(1, repsTarget / 50) : null,
+      }
+    })
+
+    const persistBreakdown = async (rows: typeof breakdownRows) => {
+      const upsertResult = await supabase
         .from("user_day_history_exercises")
-        .upsert(legacyBreakdownRows, { onConflict: "user_id,program_id,day_number,exercise_name" })
-      if (!legacyUpsertErr) {
-        // continue next day flow with legacy schema
-      } else {
-        const { error: bdelErr } = await supabase
+        .upsert(rows, { onConflict: "user_id,program_id,day_number,exercise_name" })
+      if (!upsertResult.error) return null
+
+      if (upsertResult.error.message?.includes("day_exercise_id")) {
+        const rowsWithoutDayExercise = rows.map(({ day_exercise_id: _drop, ...rest }) => rest)
+        const retry = await supabase
           .from("user_day_history_exercises")
-          .delete()
-          .eq("user_id", uid)
-          .eq("program_id", programId)
-          .eq("day_number", day)
-        if (bdelErr) {
-          setDbg("ERROR breakdown save: " + legacyUpsertErr.message)
-          return
-        }
-        const { error: binsErr } = await supabase.from("user_day_history_exercises").insert(legacyBreakdownRows)
-        if (binsErr) {
-          setDbg("ERROR breakdown save: " + binsErr.message)
-          return
+          .upsert(rowsWithoutDayExercise, { onConflict: "user_id,program_id,day_number,exercise_name" })
+        if (!retry.error) return null
+        return retry.error
+      }
+
+      const { error: delErr } = await supabase
+        .from("user_day_history_exercises")
+        .delete()
+        .eq("user_id", uid)
+        .eq("program_id", programId)
+        .eq("day_number", day)
+      if (delErr) return upsertResult.error
+
+      const insertResult = await supabase.from("user_day_history_exercises").insert(rows)
+      if (!insertResult.error) return null
+
+      if (insertResult.error.message?.includes("day_exercise_id")) {
+        const rowsWithoutDayExercise = rows.map(({ day_exercise_id: _drop, ...rest }) => rest)
+        const retryInsert = await supabase.from("user_day_history_exercises").insert(rowsWithoutDayExercise)
+        if (!retryInsert.error) return null
+        return retryInsert.error
+      }
+
+      return insertResult.error
+    }
+
+    const breakdownErr = await persistBreakdown(breakdownRows)
+    if (breakdownErr) {
+      setDbg("ERROR breakdown save: " + breakdownErr.message)
+      return
+    }
+
+    const customExerciseNames = breakdownRows.filter((r) => r.unit_override != null).map((r) => r.exercise_name)
+    if (customExerciseNames.length > 0) {
+      const { data: verifyRows, error: verifyErr } = await supabase
+        .from("user_day_history_exercises")
+        .select("exercise_name,unit_override,weight_override,catalog_exercise_id")
+        .eq("user_id", uid)
+        .eq("program_id", programId)
+        .eq("day_number", day)
+        .in("exercise_name", customExerciseNames)
+      if (!verifyErr && verifyRows) {
+        const hasMissingOverrides = verifyRows.some(
+          (r) =>
+            (r.unit_override == null || r.weight_override == null) &&
+            customExerciseNames.includes(String(r.exercise_name ?? ""))
+        )
+        if (hasMissingOverrides) {
+          console.error("breakdown verify: overrides are null for custom rows", verifyRows)
         }
       }
     }
