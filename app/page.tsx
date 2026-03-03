@@ -11,11 +11,6 @@ import LeaderboardView from "./components/LeaderboardView"
 import TabBar from "./components/TabBar"
 import { clamp, computeStreaks, localISODate } from "./lib/date"
 import { loadExerciseCatalog } from "./lib/catalog"
-const PRESET_PROGRAM_NAMES = [
-  "Самая база — 100 отжиманий",
-  "100 отжиманий + 50 подтягиваний",
-  "100 отжиманий через день",
-]
 const PRESET_PROGRAM_META: Record<
   string,
   { titleRu: string; titleEn: string; descriptionRu: string; descriptionEn: string }
@@ -981,39 +976,22 @@ export default function Home() {
   const loadPresetPrograms = async () => {
     const { data, error } = await supabase
       .from("programs")
-      .select("id,name,owner_user_id")
-      .in("name", PRESET_PROGRAM_NAMES)
-      .order("id", { ascending: false })
-      .limit(100)
+      .select("id,name,created_at,is_public")
+      .eq("is_public", true)
+      .order("created_at", { ascending: true })
 
     if (error) {
       setDbg("ERROR programs load: " + error.message)
+      console.error("programs load failed:", error.message)
       setPresetProgramRows([])
       return
     }
-
-    const byName = new Map<string, { id: string | number; name: string; owner_user_id: string | null }>()
-    ;(data ?? []).forEach((row) => {
-      const name = String(row.name ?? "")
-      const existing = byName.get(name)
-      const current = {
+    setPresetProgramRows(
+      (data ?? []).map((row) => ({
         id: row.id,
-        name,
-        owner_user_id: (row as { owner_user_id?: string | null }).owner_user_id ?? null,
-      }
-      if (!existing) {
-        byName.set(name, current)
-        return
-      }
-      if (existing.owner_user_id != null && current.owner_user_id == null) {
-        byName.set(name, current)
-      }
-    })
-
-    const ordered = PRESET_PROGRAM_NAMES.map((name) => byName.get(name)).filter(
-      (x): x is { id: string | number; name: string; owner_user_id: string | null } => Boolean(x)
+        name: String(row.name ?? ""),
+      }))
     )
-    setPresetProgramRows(ordered.map((x) => ({ id: x.id, name: x.name })))
   }
 
   const chooseBuiltInProgram = async (pickedProgramId?: string | number) => {
@@ -1024,15 +1002,15 @@ export default function Home() {
     const startDay = 1
 
     if (selectedProgramId == null) {
-      const { data: anyByName, error: anyByNameErr } = await supabase
+      const { data: anyPublic, error: anyPublicErr } = await supabase
         .from("programs")
         .select("id")
-        .in("name", PRESET_PROGRAM_NAMES)
-        .order("id", { ascending: false })
+        .eq("is_public", true)
+        .order("created_at", { ascending: true })
         .limit(50)
 
-      if (!anyByNameErr && anyByName?.length) {
-        for (const row of anyByName) {
+      if (!anyPublicErr && anyPublic?.length) {
+        for (const row of anyPublic) {
           const { data: firstDay } = await supabase
             .from("program_days")
             .select("id")
