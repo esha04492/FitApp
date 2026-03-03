@@ -445,7 +445,7 @@ export default function TodayView(props: {
           return (
             <div
               key={ex.id}
-              className={`rounded-3xl border bg-white/5 p-4 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)] backdrop-blur ${
+              className={`relative rounded-3xl border bg-white/5 p-4 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)] backdrop-blur ${
                 isCompleted ? "border-emerald-400/40" : "border-white/10"
               }`}
             >
@@ -456,22 +456,6 @@ export default function TodayView(props: {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={deletingExerciseId === ex.id}
-                    onClick={() => {
-                      if (!canDeleteExercises) {
-                        setToast(tx.readOnlyPreset)
-                        return
-                      }
-                      setPendingDelete(ex)
-                      setDeleteError(null)
-                      setDeleteScope("today")
-                    }}
-                    className="h-8 rounded-xl border border-red-400/30 bg-red-500/15 px-2 text-xs text-red-200 transition hover:bg-red-500/25 disabled:opacity-60"
-                  >
-                    {tx.delete}
-                  </button>
                   <button
                     type="button"
                     onClick={() => openEdit(ex)}
@@ -546,7 +530,7 @@ export default function TodayView(props: {
                 )}
               </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="mt-3 grid grid-cols-2 gap-2 pr-12">
                 <input
                   inputMode="numeric"
                   type="number"
@@ -569,6 +553,31 @@ export default function TodayView(props: {
                   {tx.add}
                 </button>
               </div>
+
+              <button
+                type="button"
+                disabled={deletingExerciseId === ex.id}
+                onClick={() => {
+                  if (!canDeleteExercises) {
+                    setToast(tx.readOnlyPreset)
+                    return
+                  }
+                  setPendingDelete(ex)
+                  setDeleteError(null)
+                  setDeleteScope("today")
+                }}
+                className="absolute right-3 bottom-3 flex h-9 w-9 items-center justify-center rounded-xl border border-red-500/30 bg-red-500/10 text-red-400 transition hover:bg-red-600/20 disabled:opacity-60"
+                aria-label={tx.delete}
+                title={tx.delete}
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 6h18" />
+                  <path d="M8 6V4h8v2" />
+                  <path d="M19 6l-1 14H6L5 6" />
+                  <path d="M10 11v6" />
+                  <path d="M14 11v6" />
+                </svg>
+              </button>
             </div>
           )
         })}
