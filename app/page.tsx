@@ -1043,7 +1043,7 @@ export default function Home() {
         name: x.name.trim(),
         target:
           ((x as { catalogKey?: string | null }).catalogKey ?? null) === "custom_reps"
-            ? Math.max(10, Number(x.target) || 0)
+            ? Math.max(1, Number(x.target) || 0)
             : Math.max(1, Number(x.target) || 0),
         unit: x.unit,
         weight: Number.isFinite(Number(x.weight)) ? Number(x.weight) : null,
@@ -1302,7 +1302,7 @@ export default function Home() {
         day_exercise_id: ex.id,
         catalog_exercise_id: resolvedCatalogId,
         unit_override: isCustomTime ? ("minutes" as const) : isCustomReps ? ("reps" as const) : null,
-        weight_override: isCustomTime ? 1 : isCustomReps ? Math.max(1, repsTarget / 50) : null,
+        weight_override: isCustomTime ? 1 : isCustomReps ? repsTarget / 50 : null,
       }
     })
 
@@ -1451,12 +1451,21 @@ export default function Home() {
       Object.entries(catalogMetaById)
         .map(([id, meta]) => ({
           id: Number(id),
-          label: meta.label,
+          label:
+            meta.key === "custom_time"
+              ? lang === "ru"
+                ? "Своё упражнение (время)"
+                : "Custom (time)"
+              : meta.key === "custom_reps"
+                ? lang === "ru"
+                  ? "Своё упражнение (повторы)"
+                  : "Custom (reps)"
+                : meta.label,
           unit: meta.unit,
           defaultTarget: meta.defaultTarget,
         }))
         .sort((a, b) => a.label.localeCompare(b.label)),
-    [catalogMetaById]
+    [catalogMetaById, lang]
   )
 
   const presetPrograms = useMemo(

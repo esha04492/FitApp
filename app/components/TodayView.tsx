@@ -270,8 +270,10 @@ export default function TodayView(props: {
             ex.catalog_key === "custom_time"
               ? 1
               : ex.catalog_key === "custom_reps"
-                ? Math.max(1, Math.round((ex.target_reps / 50) * 1000) / 1000)
+                ? Math.max(0.001, Math.round((ex.target_reps / 50) * 1000) / 1000)
                 : unitsPerStarBase
+          const repsOrStepsSingular =
+            ex.unit === "steps" ? (lang === "ru" ? "шаг" : "step") : lang === "ru" ? "повтор" : "rep"
           const unitLabel =
             ex.unit === "steps"
               ? lang === "ru"
@@ -285,7 +287,11 @@ export default function TodayView(props: {
                   ? "повторений"
                   : "reps"
           const starCostText =
-            unitsPerStar != null && ex.unit ? `1 ★ = ${unitsPerStar} ${unitLabel}` : "—"
+            unitsPerStar != null && ex.unit
+              ? unitsPerStar >= 1
+                ? `1 ★ = ${Math.round(unitsPerStar * 100) / 100} ${unitLabel}`
+                : `1 ${repsOrStepsSingular} = ${Math.round((1 / unitsPerStar) * 100) / 100} ★`
+              : "—"
 
           return (
             <div

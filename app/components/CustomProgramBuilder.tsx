@@ -58,6 +58,9 @@ export default function CustomProgramBuilder(props: {
           customTargetReps: "Повторения",
           fullCompletionHint: "Полностью выполненная норма ≈ 50 ★",
           customTimeHint: "1 ★ = 1 мин",
+          customRepsWarn: "Маленькая норма даёт много ★ за 1 повтор. Используй разумные значения.",
+          customTimeLabel: "Своё упражнение (время)",
+          customRepsLabel: "Своё упражнение (повторы)",
         }
       : {
           title: "Create your plan",
@@ -80,6 +83,9 @@ export default function CustomProgramBuilder(props: {
           customTargetReps: "Reps",
           fullCompletionHint: "Full completion ≈ 50 ★",
           customTimeHint: "1 ★ = 1 min",
+          customRepsWarn: "Small target gives many ★ per rep. Use reasonable values.",
+          customTimeLabel: "Custom (time)",
+          customRepsLabel: "Custom (reps)",
         }
 
   const trExerciseName = (name: string) => {
@@ -100,6 +106,12 @@ export default function CustomProgramBuilder(props: {
       "mountain climbers": "Скалолаз",
     }
     return map[key] ?? name
+  }
+
+  const getCatalogLabel = (item: CatalogExercise) => {
+    if (item.key === "custom_time") return tx.customTimeLabel
+    if (item.key === "custom_reps") return tx.customRepsLabel
+    return trExerciseName(item.label)
   }
 
   useEffect(() => {
@@ -208,7 +220,7 @@ export default function CustomProgramBuilder(props: {
         name: ex.name.trim(),
         target:
           ex.catalogKey === "custom_reps"
-            ? Math.max(10, Number(ex.target) || 0)
+            ? Math.max(1, Number(ex.target) || 0)
             : Math.max(1, Number(ex.target) || 0),
         unit: ex.unit,
         weight: ex.weight,
@@ -273,7 +285,7 @@ export default function CustomProgramBuilder(props: {
                 <option value="">{tx.selectExercise}</option>
                 {catalog.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {trExerciseName(item.label)}
+                    {getCatalogLabel(item)}
                   </option>
                 ))}
               </select>
@@ -293,7 +305,7 @@ export default function CustomProgramBuilder(props: {
                   value={String(ex.target)}
                   onChange={(e) => {
                     const raw = Number(e.target.value) || 0
-                    const safeTarget = ex.catalogKey === "custom_reps" ? Math.max(10, raw) : Math.max(0, raw)
+                    const safeTarget = ex.catalogKey === "custom_reps" ? Math.max(1, raw) : Math.max(0, raw)
                     updateExercise(index, { target: safeTarget })
                   }}
                   placeholder={
@@ -315,7 +327,10 @@ export default function CustomProgramBuilder(props: {
                 <div className="text-[11px] text-neutral-400">{tx.customTimeHint}</div>
               ) : null}
               {ex.catalogKey === "custom_reps" ? (
-                <div className="text-[11px] text-neutral-400">{tx.fullCompletionHint}</div>
+                <>
+                  <div className="text-[11px] text-neutral-400">{tx.fullCompletionHint}</div>
+                  <div className="text-[11px] text-amber-300/90">{tx.customRepsWarn}</div>
+                </>
               ) : null}
             </div>
           </div>
