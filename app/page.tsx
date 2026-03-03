@@ -468,6 +468,7 @@ export default function Home() {
 
   const [day, setDay] = useState(1)
   const [currentProgramDayId, setCurrentProgramDayId] = useState<string | null>(null)
+  const [currentProgramIsPrivate, setCurrentProgramIsPrivate] = useState(false)
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [progress, setProgress] = useState<Record<string, number>>({})
   const [customInput, setCustomInput] = useState<Record<string, string>>({})
@@ -892,6 +893,7 @@ export default function Home() {
       if (!state) {
         setDay(1)
         setCurrentProgramDayId(null)
+        setCurrentProgramIsPrivate(false)
         setProgramId(null)
         setShowProgramMenu(true)
         await loadPresetPrograms(uid)
@@ -905,6 +907,7 @@ export default function Home() {
 
       setDay(currentDay)
       setProgramId(selectedProgramId)
+      setCurrentProgramIsPrivate(false)
       setShowProgramMenu(selectedProgramId == null)
 
       if (selectedProgramId == null) {
@@ -931,6 +934,7 @@ export default function Home() {
             await upsertUserStateProgram(uid, selectedProgramId, 1)
             setDay(1)
             setProgramId(selectedProgramId)
+            setCurrentProgramIsPrivate(true)
           } else {
             setDbg("ERROR program clone: " + (clone.error ?? "failed"))
           }
@@ -941,6 +945,8 @@ export default function Home() {
           setLoading(false)
           setIsLoadingProgram(false)
           return
+        } else {
+          setCurrentProgramIsPrivate(true)
         }
       }
 
@@ -1145,10 +1151,13 @@ export default function Home() {
         return
       }
       selectedProgramId = clone.programId
+      setCurrentProgramIsPrivate(true)
     } else if (!isPersonalProgram) {
       setDbg("ERROR program select: access denied")
       setIsLoadingProgram(false)
       return
+    } else {
+      setCurrentProgramIsPrivate(true)
     }
 
     setProgramId(selectedProgramId)
@@ -1215,6 +1224,7 @@ export default function Home() {
 
       const programIdNew = body.programId
       setProgramId(programIdNew)
+      setCurrentProgramIsPrivate(true)
       setShowProgramMenu(false)
       setShowCustomBuilder(false)
       setTab("today")
@@ -1445,57 +1455,97 @@ export default function Home() {
     return { ok: true }
   }
 
+  const deleteExerciseWithScope = async (payload: {
+    exerciseId: string
+    catalogExerciseId: number | null
+    name: string
+    target: number
+    scope: "today" | "all" | "parity"
+  }): Promise<{ ok: boolean; error?: string }> => {
+    if (programId == null) return { ok: false, error: "Program is not selected" }
+    const uid = await getOrCreateUserId()
+
+    const { data: programMeta, error: programMetaErr } = await supabase
+      .from("programs")
+      .select("owner_user_id,is_public")
+      .eq("id", programId)
+      .single()
+    if (programMetaErr) return { ok: false, error: programMetaErr.message }
+    const isPersonalProgram =
+      String((programMeta as { owner_user_id?: string | null }).owner_user_id ?? "") === uid &&
+      !(programMeta as { is_public?: boolean }).is_public
+    if (!isPersonalProgram) {
+      return { ok: false, error: "Preset is read-only" }
+    }
+
+    const { data: todayDayRow, error: todayDayErr } = await supabase
+      .from("program_days")
+      .select("id,day_number")
+      .eq("program_id", programId)
+      .eq("day_number", day)
+      .single()
+    if (todayDayErr || !todayDayRow) return { ok: false, error: todayDayErr?.message ?? "Today day not found" }
+    const todayDayId = String(todayDayRow.id)
+    const todayParity = Number(todayDayRow.day_number) % 2
+
+    let targetDayIds: string[] = [todayDayId]
+    if (payload.scope !== "today") {
+      const { data: dayRows, error: dayErr } = await supabase
+        .from("program_days")
+        .select("id,day_number")
+        .eq("program_id", programId)
+      if (dayErr) return { ok: false, error: dayErr.message }
+      targetDayIds = (dayRows ?? [])
+        .filter((r) => (payload.scope === "all" ? true : Number(r.day_number) % 2 === todayParity))
+        .map((r) => String(r.id))
+    }
+
+    const { data: candidateRows, error: candidateErr } = await supabase
+      .from("day_exercises")
+      .select("id,program_day_id,catalog_exercise_id,name,target_reps")
+      .in("program_day_id", targetDayIds)
+    if (candidateErr) return { ok: false, error: candidateErr.message }
+
+    const matches = (candidateRows ?? []).filter((row) => {
+      if (payload.catalogExerciseId != null) {
+        return Number(row.catalog_exercise_id) === Number(payload.catalogExerciseId)
+      }
+      return String(row.name ?? "") === payload.name && Number(row.target_reps) === Number(payload.target)
+    })
+    const idsToDelete = matches.map((row) => String(row.id))
+    if (idsToDelete.length === 0) {
+      await loadDay(uid, programId, day)
+      return { ok: true }
+    }
+
+    const { error: deleteErr } = await supabase.from("day_exercises").delete().in("id", idsToDelete)
+    if (deleteErr) return { ok: false, error: deleteErr.message }
+
+    const todayDeletedIds = matches
+      .filter((row) => String(row.program_day_id) === todayDayId)
+      .map((row) => String(row.id))
+    if (todayDeletedIds.length > 0) {
+      const entryDate = localISODate()
+      await supabase
+        .from("user_exercise_progress")
+        .delete()
+        .eq("user_id", uid)
+        .eq("local_date", entryDate)
+        .in("day_exercise_id", todayDeletedIds)
+    }
+
+    await loadDay(uid, programId, day)
+    return { ok: true }
+  }
+
   const deleteAddedExercise = async (payload: {
     exerciseId: string
     catalogExerciseId: number | null
     name: string
     target: number
-    isOneOff: boolean
-    scope: "today" | "same_type_or_every_day"
+    scope: "today" | "all" | "parity"
   }): Promise<{ ok: boolean; error?: string }> => {
-    if (programId == null) return { ok: false, error: "Program is not selected" }
-    const uid = await getOrCreateUserId()
-
-    if (payload.scope === "today" || payload.isOneOff) {
-      const { error } = await supabase.from("day_exercises").delete().eq("id", payload.exerciseId)
-      if (error) return { ok: false, error: error.message }
-      await loadDay(uid, programId, day)
-      return { ok: true }
-    }
-
-    const { data: programDays, error: dayErr } = await supabase.from("program_days").select("id").eq("program_id", programId)
-    if (dayErr) return { ok: false, error: dayErr.message }
-    const dayIds = (programDays ?? []).map((x) => String(x.id))
-    if (dayIds.length === 0) return { ok: false, error: "Program days not found" }
-
-    let query = supabase
-      .from("day_exercises")
-      .delete()
-      .in("program_day_id", dayIds)
-      .eq("name", payload.name)
-      .eq("target_reps", payload.target)
-    if (payload.catalogExerciseId != null) {
-      query = query.eq("catalog_exercise_id", payload.catalogExerciseId)
-    }
-    const withFlagDelete = await query.eq("is_user_added", true)
-    if (withFlagDelete.error && withFlagDelete.error.message?.includes("is_user_added")) {
-      let fallback = supabase
-        .from("day_exercises")
-        .delete()
-        .in("program_day_id", dayIds)
-        .eq("name", payload.name)
-        .eq("target_reps", payload.target)
-      if (payload.catalogExerciseId != null) {
-        fallback = fallback.eq("catalog_exercise_id", payload.catalogExerciseId)
-      }
-      const fallbackDelete = await fallback
-      if (fallbackDelete.error) return { ok: false, error: fallbackDelete.error.message }
-    } else if (withFlagDelete.error) {
-      return { ok: false, error: withFlagDelete.error.message }
-    }
-
-    await loadDay(uid, programId, day)
-    return { ok: true }
+    return deleteExerciseWithScope(payload)
   }
 
   const nextDay = async (force = false) => {
@@ -1905,6 +1955,7 @@ export default function Home() {
             pretty={pretty}
             programId={programId}
             catalogOptions={editCatalogOptions}
+            canDeleteExercises={currentProgramIsPrivate}
             onAddExercise={addExerciseFromToday}
             onDeleteExercise={deleteAddedExercise}
             editExercise={editExercise}
@@ -1976,6 +2027,7 @@ export default function Home() {
 
               setDay(1)
               setCurrentProgramDayId(null)
+              setCurrentProgramIsPrivate(false)
               setProgramId(null)
               setShowProgramMenu(true)
               setShowCustomBuilder(false)

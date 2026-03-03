@@ -21,6 +21,7 @@ export default function TodayView(props: {
   pretty: (n: number) => string
   programId: string | number | null
   catalogOptions: Array<{ id: number; label: string; unit: string; defaultTarget: number; key?: string }>
+  canDeleteExercises: boolean
   onAddExercise: (payload: {
     catalogExerciseId: number
     target: number
@@ -32,8 +33,7 @@ export default function TodayView(props: {
     catalogExerciseId: number | null
     name: string
     target: number
-    isOneOff: boolean
-    scope: "today" | "same_type_or_every_day"
+    scope: "today" | "all" | "parity"
   }) => Promise<{ ok: boolean; error?: string }>
   editExercise: (payload: {
     exerciseId: string
@@ -64,6 +64,8 @@ export default function TodayView(props: {
   const [pendingDelete, setPendingDelete] = useState<Exercise | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [deletingExerciseId, setDeletingExerciseId] = useState<string | null>(null)
+  const [deleteScope, setDeleteScope] = useState<"today" | "all" | "parity">("today")
+  const [toast, setToast] = useState<string | null>(null)
 
   const {
     lang = "ru",
@@ -82,6 +84,7 @@ export default function TodayView(props: {
     pretty,
     programId,
     catalogOptions,
+    canDeleteExercises,
     onAddExercise,
     onDeleteExercise,
     editExercise,
@@ -156,6 +159,10 @@ export default function TodayView(props: {
           customNameRequired: "Для кастомного упражнения нужно название",
           delete: "Удалить",
           deleteConfirm: "Удалить упражнение?",
+          deleteToday: "Только сегодня",
+          deleteAll: "Все дни",
+          deleteParity: "Такая же чётность как сегодня",
+          readOnlyPreset: "Preset is read-only",
           onboardingTitle: "Добро пожаловать в FitStreak",
           onboardingBody:
             "Это приложение помогает фиксировать результаты упражнений в рамках программы.\n\n• Добавляй свои упражнения\n• Соревнуйся с другими пользователями в лидерборде\n• Смотри статистику за все 100 дней",
@@ -198,6 +205,10 @@ export default function TodayView(props: {
           customNameRequired: "Custom exercise name is required",
           delete: "Delete",
           deleteConfirm: "Delete this exercise?",
+          deleteToday: "Only today",
+          deleteAll: "All days",
+          deleteParity: "Same parity as today",
+          readOnlyPreset: "Preset is read-only",
           onboardingTitle: "Welcome to FitStreak",
           onboardingBody:
             "This app helps you track exercise results within your program.\n\n• Add your own exercises\n• Compete with other users on leaderboard\n• View your full statistics for all 100 days",
@@ -313,7 +324,13 @@ export default function TodayView(props: {
     setAddScope("today")
   }
 
-  const deleteExerciseNow = async (ex: Exercise, scope: "today" | "same_type_or_every_day") => {
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), 1800)
+    return () => clearTimeout(timer)
+  }, [toast])
+
+  const deleteExerciseNow = async (ex: Exercise, scope: "today" | "all" | "parity") => {
     if (deletingExerciseId) return
     setDeletingExerciseId(ex.id)
     setDeleteError(null)
@@ -322,7 +339,6 @@ export default function TodayView(props: {
       catalogExerciseId: ex.catalog_exercise_id ?? null,
       name: ex.name,
       target: ex.target_reps,
-      isOneOff: Boolean(ex.is_one_off),
       scope,
     })
     setDeletingExerciseId(null)
@@ -383,6 +399,14 @@ export default function TodayView(props: {
         </div>
       ) : null}
 
+      {toast ? (
+        <div className="fixed inset-x-0 top-4 z-50 flex justify-center px-4">
+          <div className="rounded-xl border border-red-400/30 bg-red-500/15 px-3 py-2 text-xs font-semibold text-red-100 shadow-lg">
+            {toast}
+          </div>
+        </div>
+      ) : null}
+
       <div className="space-y-4">
         {exercises.map((ex) => {
           const reps = progress[ex.id] || 0
@@ -432,23 +456,22 @@ export default function TodayView(props: {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {ex.is_user_added ? (
-                    <button
-                      type="button"
-                      disabled={deletingExerciseId === ex.id}
-                      onClick={() => {
-                        if (ex.is_one_off) {
-                          void deleteExerciseNow(ex, "today")
-                          return
-                        }
-                        setPendingDelete(ex)
-                        setDeleteError(null)
-                      }}
-                      className="h-8 rounded-xl border border-red-400/30 bg-red-500/15 px-2 text-xs text-red-200 transition hover:bg-red-500/25 disabled:opacity-60"
-                    >
-                      {tx.delete}
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    disabled={deletingExerciseId === ex.id}
+                    onClick={() => {
+                      if (!canDeleteExercises) {
+                        setToast(tx.readOnlyPreset)
+                        return
+                      }
+                      setPendingDelete(ex)
+                      setDeleteError(null)
+                      setDeleteScope("today")
+                    }}
+                    className="h-8 rounded-xl border border-red-400/30 bg-red-500/15 px-2 text-xs text-red-200 transition hover:bg-red-500/25 disabled:opacity-60"
+                  >
+                    {tx.delete}
+                  </button>
                   <button
                     type="button"
                     onClick={() => openEdit(ex)}
@@ -784,6 +807,20 @@ export default function TodayView(props: {
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
           <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-neutral-900 p-4 shadow-2xl">
             <div className="text-sm font-semibold text-neutral-100">{tx.deleteConfirm}</div>
+            <div className="mt-3 space-y-1">
+              <label className="flex items-center gap-2 text-sm text-neutral-200">
+                <input type="radio" name="deleteScope" checked={deleteScope === "today"} onChange={() => setDeleteScope("today")} />
+                <span>{tx.deleteToday}</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-neutral-200">
+                <input type="radio" name="deleteScope" checked={deleteScope === "all"} onChange={() => setDeleteScope("all")} />
+                <span>{tx.deleteAll}</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-neutral-200">
+                <input type="radio" name="deleteScope" checked={deleteScope === "parity"} onChange={() => setDeleteScope("parity")} />
+                <span>{tx.deleteParity}</span>
+              </label>
+            </div>
             {deleteError ? <div className="mt-3 text-xs text-red-200 break-words">{deleteError}</div> : null}
             <div className="mt-4 flex items-center justify-end gap-2">
               <button
@@ -800,7 +837,7 @@ export default function TodayView(props: {
               <button
                 type="button"
                 disabled={deletingExerciseId != null}
-                onClick={() => void deleteExerciseNow(pendingDelete, "same_type_or_every_day")}
+                onClick={() => void deleteExerciseNow(pendingDelete, deleteScope)}
                 className="h-10 rounded-xl border border-red-400/20 bg-red-500/15 px-4 text-sm font-semibold text-red-100 transition hover:bg-red-500/20 disabled:opacity-60"
               >
                 {tx.delete}
