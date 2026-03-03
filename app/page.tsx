@@ -462,9 +462,7 @@ export default function Home() {
   const [isLoadingProgram, setIsLoadingProgram] = useState(true)
   const [showProgramMenu, setShowProgramMenu] = useState(true)
   const [showCustomBuilder, setShowCustomBuilder] = useState(false)
-  const [presetProgramRows, setPresetProgramRows] = useState<
-    Array<{ id: string | number; name: string; isPublic: boolean; ownerUserId: string | null }>
-  >([])
+  const [presetProgramRows, setPresetProgramRows] = useState<Array<{ id: string | number; name: string }>>([])
 
   const [day, setDay] = useState(1)
   const [currentProgramDayId, setCurrentProgramDayId] = useState<string | null>(null)
@@ -904,6 +902,7 @@ export default function Home() {
 
       const currentDay = state.current_day ?? 1
       let selectedProgramId = state.program_id as string | number | null
+      let effectiveDay = currentDay
 
       setDay(currentDay)
       setProgramId(selectedProgramId)
@@ -932,6 +931,7 @@ export default function Home() {
           if (clone.ok && clone.programId != null) {
             selectedProgramId = clone.programId
             await upsertUserStateProgram(uid, selectedProgramId, 1)
+            effectiveDay = 1
             setDay(1)
             setProgramId(selectedProgramId)
             setCurrentProgramIsPrivate(true)
@@ -950,12 +950,12 @@ export default function Home() {
         }
       }
 
-      await loadDay(uid, selectedProgramId, currentDay)
+      await loadDay(uid, selectedProgramId, effectiveDay)
       await fetchHistory(uid, selectedProgramId)
       await fetchHistoryBreakdown(uid, selectedProgramId)
       await loadLeaderboard(uid)
 
-      setDbg(`OK: day ${currentDay}`)
+      setDbg(`OK: day ${effectiveDay}`)
       setLoading(false)
       setIsLoadingProgram(false)
     }
@@ -1011,42 +1011,25 @@ export default function Home() {
     await loadLeaderboard(uid)
   }
 
-  const loadPresetPrograms = async (uid: string) => {
-    const [publicQuery, personalQuery] = await Promise.all([
-      supabase
-        .from("programs")
-        .select("id,name,created_at,is_public,owner_user_id")
-        .eq("is_public", true)
-        .is("owner_user_id", null)
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("programs")
-        .select("id,name,created_at,is_public,owner_user_id")
-        .eq("owner_user_id", uid)
-        .eq("is_public", false)
-        .order("created_at", { ascending: true }),
-    ])
+  const loadPresetPrograms = async (_uid: string) => {
+    const { data, error } = await supabase
+      .from("programs")
+      .select("id,name,created_at")
+      .eq("is_public", true)
+      .is("owner_user_id", null)
+      .order("created_at", { ascending: true })
 
-    if (publicQuery.error) {
-      setDbg("ERROR programs load: " + publicQuery.error.message)
-      console.error("programs load failed:", publicQuery.error.message)
-      setPresetProgramRows([])
-      return
-    }
-    if (personalQuery.error) {
-      setDbg("ERROR programs load: " + personalQuery.error.message)
-      console.error("programs load failed:", personalQuery.error.message)
+    if (error) {
+      setDbg("ERROR programs load: " + error.message)
+      console.error("programs load failed:", error.message)
       setPresetProgramRows([])
       return
     }
 
-    const rows = [...(publicQuery.data ?? []), ...(personalQuery.data ?? [])]
     setPresetProgramRows(
-      rows.map((row) => ({
+      (data ?? []).map((row) => ({
         id: row.id,
         name: String(row.name ?? ""),
-        isPublic: Boolean(row.is_public),
-        ownerUserId: (row as { owner_user_id?: string | null }).owner_user_id ?? null,
       }))
     )
   }
@@ -1076,41 +1059,36 @@ export default function Home() {
   }
 
   const clonePublicProgram = async (presetId: string | number, uid: string): Promise<{ ok: boolean; programId?: string | number; error?: string }> => {
-    const attempts: Array<Record<string, string | number>> = [
-      { presetId, userId: uid },
-      { preset_id: presetId, user_id: uid },
-      { source_program_id: presetId, target_user_id: uid },
-    ]
+    const { data, error } = await supabase.rpc("clone_program", {
+      p_preset_program_id: presetId,
+      p_owner_user_id: uid,
+    })
 
-    for (const args of attempts) {
-      const { data, error } = await supabase.rpc("clone_program", args)
-      if (error) continue
-
-      let programId: string | number | null = null
-      if (typeof data === "string" || typeof data === "number") {
-        programId = data
-      } else if (Array.isArray(data) && data.length > 0) {
-        const row = data[0] as Record<string, unknown>
-        programId =
-          (row.new_program_id as string | number | undefined) ??
-          (row.program_id as string | number | undefined) ??
-          (row.id as string | number | undefined) ??
-          (Object.values(row)[0] as string | number | undefined) ??
-          null
-      } else if (data && typeof data === "object") {
-        const row = data as Record<string, unknown>
-        programId =
-          (row.new_program_id as string | number | undefined) ??
-          (row.program_id as string | number | undefined) ??
-          (row.id as string | number | undefined) ??
-          (Object.values(row)[0] as string | number | undefined) ??
-          null
-      }
-
-      if (programId != null) return { ok: true, programId }
+    if (error) {
+      console.error("clone_program failed", { error, presetId, userId: uid })
+      return { ok: false, error: error.message }
     }
 
-    return { ok: false, error: "clone_program failed" }
+    let programId: string | number | null = null
+    if (typeof data === "string" || typeof data === "number") {
+      programId = data
+    } else if (Array.isArray(data) && data.length > 0) {
+      const row = data[0] as Record<string, unknown>
+      const value = (row.id as string | number | undefined) ?? (Object.values(row)[0] as string | number | undefined)
+      programId = value ?? null
+    } else if (data && typeof data === "object") {
+      const row = data as Record<string, unknown>
+      const value = (row.id as string | number | undefined) ?? (Object.values(row)[0] as string | number | undefined)
+      programId = value ?? null
+    }
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    const asString = programId != null ? String(programId) : ""
+    if (!asString || !uuidRegex.test(asString)) {
+      return { ok: false, error: "no program id returned" }
+    }
+
+    return { ok: true, programId: asString }
   }
 
   const chooseBuiltInProgram = async (pickedProgramId?: string | number) => {
@@ -1141,24 +1119,21 @@ export default function Home() {
       return
     }
 
-    const isPublicPreset = Boolean(pickedProgram.is_public) && (pickedProgram.owner_user_id == null)
-    const isPersonalProgram = !pickedProgram.is_public && String(pickedProgram.owner_user_id ?? "") === uid
-    if (isPublicPreset) {
-      const clone = await clonePublicProgram(selectedProgramId, uid)
-      if (!clone.ok || clone.programId == null) {
-        setDbg("ERROR program clone: " + (clone.error ?? "failed"))
-        setIsLoadingProgram(false)
-        return
-      }
-      selectedProgramId = clone.programId
-      setCurrentProgramIsPrivate(true)
-    } else if (!isPersonalProgram) {
-      setDbg("ERROR program select: access denied")
+    const isPublicPreset = Boolean(pickedProgram.is_public) && pickedProgram.owner_user_id == null
+    if (!isPublicPreset) {
+      setDbg("ERROR program select: preset not found")
       setIsLoadingProgram(false)
       return
-    } else {
-      setCurrentProgramIsPrivate(true)
     }
+
+    const clone = await clonePublicProgram(selectedProgramId, uid)
+    if (!clone.ok || clone.programId == null) {
+      setDbg("ERROR program clone: " + (clone.error ?? "failed"))
+      setIsLoadingProgram(false)
+      return
+    }
+    selectedProgramId = clone.programId
+    setCurrentProgramIsPrivate(true)
 
     setProgramId(selectedProgramId)
     setShowProgramMenu(false)
