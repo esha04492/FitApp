@@ -178,11 +178,11 @@ export default function LeaderboardView(props: {
                 <div key={idx}>{line}</div>
               ))}
             </div>
-            <div className="mt-4 flex justify-end">
+            <div className="mt-4">
               <button
                 type="button"
                 onClick={() => setShowHowItWorks(false)}
-                className="h-10 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition hover:bg-white/10"
+                className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition hover:bg-white/10"
               >
                 {l.ok}
               </button>

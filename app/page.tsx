@@ -1606,6 +1606,7 @@ export default function Home() {
       Object.entries(catalogMetaById)
         .map(([id, meta]) => ({
           id: Number(id),
+          // Localized labels for RU in exercise pickers.
           label:
             meta.key === "custom_time"
               ? lang === "ru"
@@ -1615,7 +1616,26 @@ export default function Home() {
                 ? lang === "ru"
                   ? "Своё упражнение (повторы)"
                   : "Custom (reps)"
-                : meta.label,
+                : lang === "ru"
+                  ? (() => {
+                      const key = meta.label.trim().toLowerCase()
+                      const map: Record<string, string> = {
+                        "push-ups": "Отжимания",
+                        pushups: "Отжимания",
+                        "pull-ups": "Подтягивания",
+                        pullups: "Подтягивания",
+                        squats: "Приседания",
+                        dips: "Отжимания на брусьях",
+                        abs: "Пресс",
+                        walking: "Ходьба",
+                        lunges: "Выпады",
+                        burpees: "Берпи",
+                        "jump rope": "Прыжки на скакалке",
+                        "mountain climbers": "Скалолаз",
+                      }
+                      return map[key] ?? meta.label
+                    })()
+                  : meta.label,
           unit: meta.unit,
           defaultTarget: meta.defaultTarget,
           key: meta.key,
@@ -1642,6 +1662,24 @@ export default function Home() {
 
   const howItWorksExamples = useMemo(() => {
     const values = Object.values(catalogMetaById)
+    const trRuLabel = (label: string) => {
+      const key = label.trim().toLowerCase()
+      const map: Record<string, string> = {
+        "push-ups": "Отжимания",
+        pushups: "Отжимания",
+        "pull-ups": "Подтягивания",
+        pullups: "Подтягивания",
+        squats: "Приседания",
+        dips: "Отжимания на брусьях",
+        abs: "Пресс",
+        walking: "Ходьба",
+        lunges: "Выпады",
+        burpees: "Берпи",
+        "jump rope": "Прыжки на скакалке",
+        "mountain climbers": "Скалолаз",
+      }
+      return map[key] ?? label
+    }
     const preferred = ["push_ups", "walking", "pull_ups", "squats", "abs"]
       .map((k) => values.find((x) => x.key === k))
       .filter((x): x is { weight: number; unit: string; defaultTarget: number; label: string; key: string } => Boolean(x))
@@ -1656,7 +1694,7 @@ export default function Home() {
             ? "Своё упражнение (время)"
             : item.key === "custom_reps"
               ? "Своё упражнение (повторы)"
-              : item.label
+              : trRuLabel(item.label)
           : item.key === "custom_time"
             ? "Custom (time)"
             : item.key === "custom_reps"
