@@ -108,6 +108,15 @@ export default function TodayView(props: {
     return map[key] ?? name
   }
 
+  const trUnit = (unit: string | undefined) => {
+    if (!unit) return ""
+    if (lang !== "ru") return unit
+    if (unit === "reps") return "повт."
+    if (unit === "steps") return "шаги"
+    if (unit === "minutes") return "мин"
+    return unit
+  }
+
   const tx =
     lang === "ru"
       ? {
@@ -614,7 +623,7 @@ export default function TodayView(props: {
               >
                 {catalogOptions.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {trExerciseName(item.label)} ({item.unit})
+                    {trExerciseName(item.label)} ({trUnit(item.unit)})
                   </option>
                 ))}
               </select>
@@ -699,7 +708,7 @@ export default function TodayView(props: {
                 <option value="">{tx.selectExercise}</option>
                 {catalogOptions.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.label} ({item.unit})
+                    {item.label} ({trUnit(item.unit)})
                   </option>
                 ))}
               </select>
