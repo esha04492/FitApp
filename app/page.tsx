@@ -1569,7 +1569,21 @@ export default function Home() {
       })
     }
 
-    const breakdownRows = exercises.map((ex) => {
+    type BreakdownRow = {
+      user_id: string
+      program_id: string | number
+      day_number: number
+      local_date: string
+      exercise_name: string
+      reps_done: number
+      reps_target: number
+      day_exercise_id?: string
+      catalog_exercise_id: number | null
+      unit_override: "minutes" | "reps" | null
+      weight_override: number | null
+    }
+
+    const breakdownRows: BreakdownRow[] = exercises.map((ex) => {
       const repsTarget = Math.max(1, Number(ex.target_reps) || 0)
       const isCustomTime = ex.catalog_key === "custom_time"
       const isCustomReps = ex.catalog_key === "custom_reps"
@@ -1590,14 +1604,37 @@ export default function Home() {
       }
     })
 
-    const persistBreakdown = async (rows: typeof breakdownRows) => {
+    const dedupeBreakdownRows = (rows: BreakdownRow[]) => {
+      const byKey = new Map<string, BreakdownRow>()
+      rows.forEach((row) => {
+        const key = `${row.user_id}__${String(row.program_id)}__${row.day_number}__${row.exercise_name}`
+        const prev = byKey.get(key)
+        if (!prev) {
+          byKey.set(key, { ...row })
+          return
+        }
+        byKey.set(key, {
+          ...prev,
+          reps_done: (Number(prev.reps_done) || 0) + (Number(row.reps_done) || 0),
+          reps_target: Math.max(Number(prev.reps_target) || 0, Number(row.reps_target) || 0),
+          catalog_exercise_id: prev.catalog_exercise_id ?? row.catalog_exercise_id ?? null,
+          unit_override: prev.unit_override ?? row.unit_override ?? null,
+          weight_override: prev.weight_override ?? row.weight_override ?? null,
+          day_exercise_id: prev.day_exercise_id ?? row.day_exercise_id,
+        })
+      })
+      return Array.from(byKey.values())
+    }
+
+    const persistBreakdown = async (rows: BreakdownRow[]) => {
+      const dedupedRows = dedupeBreakdownRows(rows)
       const upsertResult = await supabase
         .from("user_day_history_exercises")
-        .upsert(rows, { onConflict: "user_id,program_id,day_number,exercise_name" })
+        .upsert(dedupedRows, { onConflict: "user_id,program_id,day_number,exercise_name" })
       if (!upsertResult.error) return null
 
       if (upsertResult.error.message?.includes("day_exercise_id")) {
-        const rowsWithoutDayExercise = rows.map(({ day_exercise_id: _drop, ...rest }) => rest)
+        const rowsWithoutDayExercise = dedupedRows.map(({ day_exercise_id: _drop, ...rest }) => rest)
         const retry = await supabase
           .from("user_day_history_exercises")
           .upsert(rowsWithoutDayExercise, { onConflict: "user_id,program_id,day_number,exercise_name" })
@@ -1613,11 +1650,11 @@ export default function Home() {
         .eq("day_number", day)
       if (delErr) return upsertResult.error
 
-      const insertResult = await supabase.from("user_day_history_exercises").insert(rows)
+      const insertResult = await supabase.from("user_day_history_exercises").insert(dedupedRows)
       if (!insertResult.error) return null
 
       if (insertResult.error.message?.includes("day_exercise_id")) {
-        const rowsWithoutDayExercise = rows.map(({ day_exercise_id: _drop, ...rest }) => rest)
+        const rowsWithoutDayExercise = dedupedRows.map(({ day_exercise_id: _drop, ...rest }) => rest)
         const retryInsert = await supabase.from("user_day_history_exercises").insert(rowsWithoutDayExercise)
         if (!retryInsert.error) return null
         return retryInsert.error
