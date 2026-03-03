@@ -75,23 +75,23 @@ export default function ProgramPicker(props: {
           <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-neutral-900 px-5 py-4 shadow-2xl">
             <div className="text-base font-semibold text-neutral-100">{labels.confirmTitle}</div>
             <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-neutral-300">{labels.confirmBody}</p>
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShowConfirm(false)}
-                className="h-11 flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition active:scale-[0.99] hover:bg-white/10"
-              >
-                {labels.confirmBack}
-              </button>
+            <div className="mt-4 grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={async () => {
                   setShowConfirm(false)
                   await onPickBuiltIn()
                 }}
-                className="h-11 rounded-2xl border border-emerald-400/30 bg-emerald-500/20 px-4 text-sm font-semibold text-emerald-100 transition active:scale-[0.99] hover:bg-emerald-500/25"
+                className="h-11 w-full rounded-2xl border border-emerald-400/30 bg-emerald-500/20 px-4 text-sm font-semibold text-emerald-100 transition active:scale-[0.99] hover:bg-emerald-500/25"
               >
                 {labels.confirmOk}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowConfirm(false)}
+                className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition active:scale-[0.99] hover:bg-white/10"
+              >
+                {labels.confirmBack}
               </button>
             </div>
           </div>

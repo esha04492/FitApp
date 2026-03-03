@@ -431,7 +431,7 @@ export default function Home() {
   const [leaderboardLoading, setLeaderboardLoading] = useState(false)
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null)
   const [catalogMetaById, setCatalogMetaById] = useState<
-    Record<number, { weight: number; unit: "reps" | "steps"; defaultTarget: number; label: string }>
+    Record<number, { weight: number; unit: string; defaultTarget: number; label: string }>
   >({})
   const [showLeaderboardNameForm, setShowLeaderboardNameForm] = useState(false)
   const [leaderboardDisplayName, setLeaderboardDisplayName] = useState("")
@@ -510,7 +510,7 @@ export default function Home() {
     if (Object.keys(catalogMetaById).length > 0) return catalogMetaById
     const result = await loadExerciseCatalog()
     if (result.error) throw new Error(result.error)
-    const map: Record<number, { weight: number; unit: "reps" | "steps"; defaultTarget: number; label: string }> = {}
+    const map: Record<number, { weight: number; unit: string; defaultTarget: number; label: string }> = {}
     result.data.forEach((item) => {
       map[item.id] = {
         weight: Number(item.weight) || 1,
@@ -1192,18 +1192,23 @@ export default function Home() {
     originalName: string
     name: string
     target: number
+    catalogExerciseId: number | null
     applyTo: "today" | "program"
   }): Promise<{ ok: boolean; error?: string }> => {
     if (programId == null) return { ok: false, error: lang === "ru" ? "Программа не выбрана" : "Program is not selected" }
     const trimmedName = payload.name.trim()
     const safeTarget = Math.max(1, Number(payload.target) || 0)
+    const safeCatalogId =
+      payload.catalogExerciseId != null && Number.isFinite(Number(payload.catalogExerciseId))
+        ? Number(payload.catalogExerciseId)
+        : null
     if (!trimmedName) return { ok: false, error: lang === "ru" ? "Название обязательно" : "Name is required" }
 
     try {
       if (payload.applyTo === "today") {
         const { error: err1 } = await supabase
           .from("day_exercises")
-          .update({ name: trimmedName, target_reps: safeTarget })
+          .update({ name: trimmedName, target_reps: safeTarget, catalog_exercise_id: safeCatalogId })
           .eq("id", payload.exerciseId)
         if (err1) return { ok: false, error: err1.message ?? "Update failed" }
       } else {
@@ -1217,7 +1222,7 @@ export default function Home() {
 
         const { error: err1 } = await supabase
           .from("day_exercises")
-          .update({ name: trimmedName, target_reps: safeTarget })
+          .update({ name: trimmedName, target_reps: safeTarget, catalog_exercise_id: safeCatalogId })
           .in("program_day_id", dayIds)
           .eq("name", payload.originalName)
         if (err1) return { ok: false, error: err1.message ?? "Update failed" }
@@ -1388,6 +1393,19 @@ export default function Home() {
     return { steps, others }
   }, [historyByExercise])
 
+  const editCatalogOptions = useMemo(
+    () =>
+      Object.entries(catalogMetaById)
+        .map(([id, meta]) => ({
+          id: Number(id),
+          label: meta.label,
+          unit: meta.unit,
+          defaultTarget: meta.defaultTarget,
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [catalogMetaById]
+  )
+
   const stats = useMemo(() => {
     const totalDays = history.length
     const totalReps = history.reduce((s, h) => s + h.totalDone, 0)
@@ -1476,6 +1494,7 @@ export default function Home() {
             dayTotals={dayTotals}
             currentStreak={stats.streak}
             pretty={pretty}
+            catalogOptions={editCatalogOptions}
             editExercise={editExercise}
           />
         ) : tab === "stats" ? (

@@ -19,11 +19,13 @@ export default function TodayView(props: {
   allCompleted: boolean
   dayTotals: { pct: number }
   pretty: (n: number) => string
+  catalogOptions: Array<{ id: number; label: string; unit: string; defaultTarget: number }>
   editExercise: (payload: {
     exerciseId: string
     originalName: string
     name: string
     target: number
+    catalogExerciseId: number | null
     applyTo: "today" | "program"
   }) => Promise<{ ok: boolean; error?: string }>
 }) {
@@ -35,6 +37,8 @@ export default function TodayView(props: {
   const [editExerciseId, setEditExerciseId] = useState<string | null>(null)
   const [editName, setEditName] = useState("")
   const [editTarget, setEditTarget] = useState("1")
+  const [editCatalogExerciseId, setEditCatalogExerciseId] = useState<string>("")
+  const [editUnit, setEditUnit] = useState("")
   const [editApplyTo, setEditApplyTo] = useState<"today" | "program">("today")
   const [editError, setEditError] = useState<string | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
@@ -54,6 +58,7 @@ export default function TodayView(props: {
     allCompleted,
     dayTotals,
     pretty,
+    catalogOptions,
     editExercise,
   } = props
 
@@ -151,9 +156,16 @@ export default function TodayView(props: {
   }
 
   const openEdit = (exercise: Exercise) => {
+    const fallbackCatalog =
+      exercise.catalog_exercise_id != null
+        ? catalogOptions.find((x) => x.id === exercise.catalog_exercise_id)
+        : catalogOptions.find((x) => x.label.trim().toLowerCase() === String(exercise.name ?? "").trim().toLowerCase())
+
     setEditExerciseId(exercise.id)
-    setEditName(exercise.name)
+    setEditName(fallbackCatalog?.label ?? exercise.name)
     setEditTarget(String(exercise.target_reps))
+    setEditCatalogExerciseId(fallbackCatalog ? String(fallbackCatalog.id) : "")
+    setEditUnit(fallbackCatalog?.unit ?? exercise.unit ?? "")
     setEditApplyTo("today")
     setEditError(null)
   }
@@ -181,6 +193,7 @@ export default function TodayView(props: {
       originalName: selectedExercise.name,
       name,
       target,
+      catalogExerciseId: editCatalogExerciseId ? Number(editCatalogExerciseId) : null,
       applyTo: editApplyTo,
     })
 
@@ -428,17 +441,36 @@ export default function TodayView(props: {
           <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-neutral-900 p-4 shadow-2xl">
             <div className="text-sm font-semibold text-neutral-100">{tx.editExercise}</div>
             <div className="mt-3 space-y-2">
-              <input
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
+              <select
+                value={editCatalogExerciseId}
+                onChange={(e) => {
+                  const selectedId = e.target.value
+                  setEditCatalogExerciseId(selectedId)
+                  const selected = catalogOptions.find((x) => String(x.id) === selectedId)
+                  if (!selected) return
+                  setEditName(selected.label)
+                  setEditUnit(selected.unit)
+                  setEditTarget(String(Math.max(1, Number(selected.defaultTarget) || 1)))
+                }}
                 className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-100 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
-              />
+              >
+                {catalogOptions.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {trExerciseName(item.label)} ({item.unit})
+                  </option>
+                ))}
+              </select>
               <input
                 type="number"
                 inputMode="numeric"
                 value={editTarget}
                 onChange={(e) => setEditTarget(e.target.value)}
                 className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-100 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
+              />
+              <input
+                value={editUnit}
+                readOnly
+                className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-300 outline-none"
               />
             </div>
 
