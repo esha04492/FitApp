@@ -25,8 +25,8 @@ export default function ProgramPicker(props: {
 
   const introBody =
     lang === "ru"
-      ? "Привет! Это приложение для ежедневных тренировок 100 дней подряд.\nВыбирай программу или создавай свою — и начинай двигаться к результату."
-      : "Hi! This app is for daily workouts for 100 days in a row.\nChoose a program or create your own and start moving toward your result."
+      ? "Привет!\n\nЭто приложение для ежедневных тренировок 100 дней подряд.\n\n• Выбирай готовую программу или создавай свою\n• Отмечай прогресс каждый день\n• Двигайся к результату шаг за шагом"
+      : "Hi!\n\nThis app is for daily workouts for 100 days in a row.\n\n• Choose a ready program or create your own\n• Track your progress every day\n• Move toward your result step by step"
   const introOk = lang === "ru" ? "ОК" : "OK"
 
   useEffect(() => {
@@ -84,21 +84,13 @@ export default function ProgramPicker(props: {
       </div>
 
       {showIntro ? (
-        <div className="relative mt-4 rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-          <button
-            type="button"
-            onClick={closeIntro}
-            className="absolute right-3 top-3 h-7 w-7 rounded-full border border-white/10 bg-white/5 text-xs text-neutral-300 transition hover:bg-white/10 hover:text-neutral-100"
-            aria-label="Close intro"
-          >
-            X
-          </button>
-          <div className="pr-10 text-center">
-            <p className="whitespace-pre-line text-xs leading-relaxed text-neutral-300">{introBody}</p>
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
+          <div className="w-full max-w-md rounded-3xl border border-white/10 bg-neutral-900 p-4 shadow-2xl">
+            <p className="whitespace-pre-line text-sm leading-relaxed text-neutral-300">{introBody}</p>
             <button
               type="button"
               onClick={closeIntro}
-              className="mt-3 h-9 rounded-xl border border-white/10 bg-white/5 px-4 text-xs font-semibold text-neutral-100 transition hover:bg-white/10"
+              className="mt-4 h-10 w-full rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition hover:bg-white/10"
             >
               {introOk}
             </button>

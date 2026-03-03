@@ -156,9 +156,9 @@ export default function TodayView(props: {
           customNameRequired: "Для кастомного упражнения нужно название",
           delete: "Удалить",
           deleteConfirm: "Удалить упражнение?",
-          onboardingTitle: "FitStreak",
+          onboardingTitle: "Добро пожаловать в FitStreak",
           onboardingBody:
-            "Это приложение помогает фиксировать результаты упражнений в рамках программы.\nТы можешь добавлять свои упражнения, соревноваться с другими пользователями в лидерборде\nи смотреть свою статистику за все 100 дней.",
+            "Это приложение помогает фиксировать результаты упражнений в рамках программы.\n\n• Добавляй свои упражнения\n• Соревнуйся с другими пользователями в лидерборде\n• Смотри статистику за все 100 дней",
         }
       : {
           workout: "Workout",
@@ -198,9 +198,9 @@ export default function TodayView(props: {
           customNameRequired: "Custom exercise name is required",
           delete: "Delete",
           deleteConfirm: "Delete this exercise?",
-          onboardingTitle: "FitStreak",
+          onboardingTitle: "Welcome to FitStreak",
           onboardingBody:
-            "This app helps you track exercise results within your program.\nYou can add your own exercises, compete with other users on leaderboard,\nand view your full statistics for all 100 days.",
+            "This app helps you track exercise results within your program.\n\n• Add your own exercises\n• Compete with other users on leaderboard\n• View your full statistics for all 100 days",
         }
 
   useEffect(() => {
@@ -368,22 +368,14 @@ export default function TodayView(props: {
       </div>
 
       {showOnboarding ? (
-        <div className="relative mb-4 rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-          <button
-            type="button"
-            onClick={dismissOnboarding}
-            className="absolute right-3 top-3 h-7 w-7 rounded-full border border-white/10 bg-white/5 text-xs text-neutral-300 transition hover:bg-white/10 hover:text-neutral-100"
-            aria-label="Close onboarding"
-          >
-            X
-          </button>
-          <div className="pr-10 text-center">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
+          <div className="w-full max-w-md rounded-3xl border border-white/10 bg-neutral-900 p-4 shadow-2xl text-center">
             <div className="text-sm font-semibold text-neutral-100">{tx.onboardingTitle}</div>
-            <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-neutral-300">{tx.onboardingBody}</p>
+            <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-neutral-300">{tx.onboardingBody}</p>
             <button
               type="button"
               onClick={dismissOnboarding}
-              className="mt-3 h-9 rounded-xl border border-white/10 bg-white/5 px-4 text-xs font-semibold text-neutral-100 transition hover:bg-white/10"
+              className="mt-4 h-10 w-full rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition hover:bg-white/10"
             >
               OK
             </button>
