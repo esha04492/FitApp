@@ -1799,6 +1799,7 @@ export default function Home() {
             dayTotals={dayTotals}
             currentStreak={stats.streak}
             pretty={pretty}
+            programId={programId}
             catalogOptions={editCatalogOptions}
             onAddExercise={addExerciseFromToday}
             onDeleteExercise={deleteAddedExercise}

@@ -1,5 +1,5 @@
 ﻿"use client"
-import { useMemo, useState, type Dispatch, type SetStateAction } from "react"
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react"
 import ActionBtn from "./ActionBtn"
 import { clamp } from "../lib/date"
 import type { Exercise } from "./types"
@@ -19,6 +19,7 @@ export default function TodayView(props: {
   allCompleted: boolean
   dayTotals: { pct: number }
   pretty: (n: number) => string
+  programId: string | number | null
   catalogOptions: Array<{ id: number; label: string; unit: string; defaultTarget: number; key?: string }>
   onAddExercise: (payload: {
     catalogExerciseId: number
@@ -44,10 +45,7 @@ export default function TodayView(props: {
   }) => Promise<{ ok: boolean; error?: string }>
 }) {
   const [showSkip, setShowSkip] = useState(false)
-  const [showOnboarding, setShowOnboarding] = useState(() => {
-    if (typeof window === "undefined") return false
-    return localStorage.getItem("onboarding_dismissed") !== "1"
-  })
+  const [showOnboarding, setShowOnboarding] = useState(false)
   const [editExerciseId, setEditExerciseId] = useState<string | null>(null)
   const [editName, setEditName] = useState("")
   const [editTarget, setEditTarget] = useState("1")
@@ -82,6 +80,7 @@ export default function TodayView(props: {
     allCompleted,
     dayTotals,
     pretty,
+    programId,
     catalogOptions,
     onAddExercise,
     onDeleteExercise,
@@ -156,10 +155,10 @@ export default function TodayView(props: {
           targetRequired: "Нужно указать цель",
           customNameRequired: "Для кастомного упражнения нужно название",
           delete: "Удалить",
-          deleteConfirm: "Удалить это упражнение из программы?",
-          onboardingTitle: "FitStreak — 100 дней дисциплины",
+          deleteConfirm: "Удалить упражнение?",
+          onboardingTitle: "FitStreak",
           onboardingBody:
-            "Это приложение для 100-дневного челленджа. Каждый день отмечай выполнение упражнений, следи за серией и старайся не прерывать её.\nМожно пропустить день, но серия обнулится.\nЖми «Следующий день», когда закроешь все упражнения.",
+            "Это приложение помогает фиксировать результаты упражнений в рамках программы.\nТы можешь добавлять свои упражнения, соревноваться с другими пользователями в лидерборде\nи смотреть свою статистику за все 100 дней.",
         }
       : {
           workout: "Workout",
@@ -198,11 +197,21 @@ export default function TodayView(props: {
           targetRequired: "Target is required",
           customNameRequired: "Custom exercise name is required",
           delete: "Delete",
-          deleteConfirm: "Delete this exercise from program?",
-          onboardingTitle: "FitStreak - 100 days of discipline",
+          deleteConfirm: "Delete this exercise?",
+          onboardingTitle: "FitStreak",
           onboardingBody:
-            "This app is a 100-day challenge tracker. Mark your exercises daily, build your streak, and stay consistent.\nYou can skip a day, but your streak will reset.\nTap Next day when all exercises are done. Let us go.",
+            "This app helps you track exercise results within your program.\nYou can add your own exercises, compete with other users on leaderboard,\nand view your full statistics for all 100 days.",
         }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    if (programId == null) {
+      setShowOnboarding(false)
+      return
+    }
+    const key = `intro_seen_for_program_${programId}`
+    setShowOnboarding(localStorage.getItem(key) !== "1")
+  }, [programId])
 
   const selectedExercise = useMemo(
     () => exercises.find((x) => x.id === editExerciseId) ?? null,
@@ -210,7 +219,9 @@ export default function TodayView(props: {
   )
 
   const dismissOnboarding = () => {
-    localStorage.setItem("onboarding_dismissed", "1")
+    if (programId != null) {
+      localStorage.setItem(`intro_seen_for_program_${programId}`, "1")
+    }
     setShowOnboarding(false)
   }
 
@@ -369,6 +380,13 @@ export default function TodayView(props: {
           <div className="pr-10 text-center">
             <div className="text-sm font-semibold text-neutral-100">{tx.onboardingTitle}</div>
             <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-neutral-300">{tx.onboardingBody}</p>
+            <button
+              type="button"
+              onClick={dismissOnboarding}
+              className="mt-3 h-9 rounded-xl border border-white/10 bg-white/5 px-4 text-xs font-semibold text-neutral-100 transition hover:bg-white/10"
+            >
+              OK
+            </button>
           </div>
         </div>
       ) : null}
