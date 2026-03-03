@@ -15,6 +15,14 @@ const PRESET_PROGRAM_META: Record<
   string,
   { titleRu: string; titleEn: string; descriptionRu: string; descriptionEn: string }
 > = {
+  "100 days Advanced": {
+    titleRu: "100 days Advanced",
+    titleEn: "100 days Advanced",
+    descriptionRu:
+      "Эта программа представляет из себя чередующиеся 2 тренировки на протяжении 100 дней:\n• День A: отжимания двух типов, подтягивания и шаги\n• День B: пресс, приседания и шаги\nИ так по кругу, 100 дней.",
+    descriptionEn:
+      "This program alternates two workouts for 100 days:\n• Day A: two push-up types, pull-ups, and steps\n• Day B: abs, squats, and steps\nRepeat this cycle for 100 days.",
+  },
   "Самая база — 100 отжиманий": {
     titleRu: "Самая база — 100 отжиманий",
     titleEn: "Basic - 100 push-ups",
