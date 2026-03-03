@@ -4,6 +4,7 @@ export type Exercise = {
   target_reps: number
   sort_order: number
   catalog_exercise_id?: number | null
+  catalog_key?: string
   unit?: string
   weight?: number | null
   default_target?: number | null

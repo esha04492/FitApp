@@ -461,7 +461,7 @@ export default function Home() {
   const [leaderboardLoading, setLeaderboardLoading] = useState(false)
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null)
   const [catalogMetaById, setCatalogMetaById] = useState<
-    Record<number, { weight: number; unit: string; defaultTarget: number; label: string }>
+    Record<number, { weight: number; unit: string; defaultTarget: number; label: string; key: string }>
   >({})
   const [showLeaderboardNameForm, setShowLeaderboardNameForm] = useState(false)
   const [leaderboardDisplayName, setLeaderboardDisplayName] = useState("")
@@ -549,13 +549,14 @@ export default function Home() {
     if (Object.keys(catalogMetaById).length > 0) return catalogMetaById
     const result = await loadExerciseCatalog()
     if (result.error) throw new Error(result.error)
-    const map: Record<number, { weight: number; unit: string; defaultTarget: number; label: string }> = {}
+    const map: Record<number, { weight: number; unit: string; defaultTarget: number; label: string; key: string }> = {}
     result.data.forEach((item) => {
       map[item.id] = {
         weight: Number(item.weight) || 1,
         unit: item.unit,
         defaultTarget: Number(item.default_target) || 0,
         label: item.label,
+        key: item.key,
       }
     })
     setCatalogMetaById(map)
@@ -565,21 +566,14 @@ export default function Home() {
   const computeTotalStarsByUsers = async (userIds: string[]) => {
     const { data: catalogRows, error: catalogErr } = await supabase
       .from("exercise_catalog")
-      .select("id,weight,label")
+      .select("id,weight")
       .eq("is_active", true)
     if (catalogErr) throw new Error(catalogErr.message)
     const weightByCatalogId = new Map<number, number>()
-    const weightByName = new Map<string, number>()
-    const catalogIdByName = new Map<string, number>()
     ;(catalogRows ?? []).forEach((r) => {
       const id = Number(r.id)
       const weight = Number(r.weight)
       if (Number.isFinite(id)) weightByCatalogId.set(id, weight)
-      const label = String((r as { label?: string | null }).label ?? "").trim().toLowerCase()
-      if (label) {
-        weightByName.set(label, weight)
-        catalogIdByName.set(label, id)
-      }
     })
 
     const totals = new Map<string, number>()
@@ -592,17 +586,17 @@ export default function Home() {
       reps_done?: number | null
       catalog_exercise_id?: number | null
       day_exercise_id?: string | null
-      exercise_name?: string | null
+      weight_override?: number | null
     }
     let breakdownRows: BreakdownRow[] = []
     const repsQueryWithDayExercise = await supabase
       .from("user_day_history_exercises")
-      .select("id,user_id,reps_done,catalog_exercise_id,day_exercise_id,exercise_name")
+      .select("id,user_id,reps_done,catalog_exercise_id,day_exercise_id,weight_override")
       .in("user_id", userIds)
     if (repsQueryWithDayExercise.error) {
       const repsQuery = await supabase
         .from("user_day_history_exercises")
-        .select("id,user_id,reps_done,catalog_exercise_id,exercise_name")
+        .select("id,user_id,reps_done,catalog_exercise_id,weight_override")
         .in("user_id", userIds)
       if (repsQuery.error) throw new Error(repsQuery.error.message)
       breakdownRows = (repsQuery.data as BreakdownRow[]) ?? []
@@ -642,18 +636,13 @@ export default function Home() {
       if (!Number.isFinite(catalogId) && row.day_exercise_id) {
         catalogId = Number(dayCatalogMap.get(String(row.day_exercise_id)))
       }
-      if (!Number.isFinite(catalogId)) {
-        const exName = String(row.exercise_name ?? "").trim().toLowerCase()
-        catalogId = Number(catalogIdByName.get(exName))
-      }
       if (Number.isFinite(catalogId) && row.catalog_exercise_id == null && row.id) {
         historyCatalogBackfill.push({ id: String(row.id), catalogId: Number(catalogId) })
       }
-      let weight = Number.isFinite(catalogId) ? Number(weightByCatalogId.get(catalogId)) : NaN
-      if (!Number.isFinite(weight) || weight <= 0) {
-        const exName = String(row.exercise_name ?? "").trim().toLowerCase()
-        weight = Number(weightByName.get(exName))
-      }
+      const overrideWeight = Number(row.weight_override)
+      const weight = Number.isFinite(overrideWeight) && overrideWeight > 0
+        ? overrideWeight
+        : (Number.isFinite(catalogId) ? Number(weightByCatalogId.get(catalogId)) : NaN)
       if (!Number.isFinite(weight) || weight <= 0) return
 
       const stars = Math.floor(done / weight)
@@ -803,6 +792,7 @@ export default function Home() {
       return {
         ...row,
         catalog_exercise_id: resolvedCatalogId,
+        catalog_key: resolvedCatalogId != null ? catalogMap[resolvedCatalogId]?.key : undefined,
         unit: resolvedCatalogId != null ? catalogMap[resolvedCatalogId]?.unit : undefined,
         weight: resolvedCatalogId != null ? catalogMap[resolvedCatalogId]?.weight : null,
         default_target: resolvedCatalogId != null ? catalogMap[resolvedCatalogId]?.defaultTarget : null,
@@ -1079,8 +1069,12 @@ export default function Home() {
     const exList = payload.exercises
       .map((x) => ({
         catalogExerciseId: x.catalogExerciseId,
+        catalogKey: (x as { catalogKey?: string | null }).catalogKey ?? null,
         name: x.name.trim(),
-        target: Math.max(1, Number(x.target) || 0),
+        target:
+          ((x as { catalogKey?: string | null }).catalogKey ?? null) === "custom_reps"
+            ? Math.max(10, Number(x.target) || 0)
+            : Math.max(1, Number(x.target) || 0),
         unit: x.unit,
         weight: Number.isFinite(Number(x.weight)) ? Number(x.weight) : null,
       }))
@@ -1307,6 +1301,11 @@ export default function Home() {
 
     // 1b) write per-exercise breakdown
     const breakdownRows = exercises.map((ex) => ({
+      ...(ex.catalog_key === "custom_time"
+        ? { unit_override: "minutes" as const, weight_override: 1 }
+        : ex.catalog_key === "custom_reps"
+          ? { unit_override: "reps" as const, weight_override: Math.max(1, ex.target_reps / 50) }
+          : {}),
       user_id: uid,
       program_id: programId,
       day_number: day,

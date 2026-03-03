@@ -4,7 +4,7 @@ export type CatalogExercise = {
   id: number
   key: string
   label: string
-  unit: "reps" | "steps"
+  unit: "reps" | "steps" | "minutes"
   default_target: number
   weight: number
 }

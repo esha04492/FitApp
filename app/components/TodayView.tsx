@@ -265,9 +265,25 @@ export default function TodayView(props: {
           const percent = clamp(Math.round((reps / ex.target_reps) * 100), 0, 100)
           const remaining = Math.max(ex.target_reps - reps, 0)
           const isSteps = ex.unit === "steps" || ex.target_reps >= 1000 || /step/i.test(ex.name)
-          const unitsPerStar = ex.weight != null ? Math.round(Number(ex.weight) * 1000) / 1000 : null
+          const unitsPerStarBase = ex.weight != null ? Math.round(Number(ex.weight) * 1000) / 1000 : null
+          const unitsPerStar =
+            ex.catalog_key === "custom_time"
+              ? 1
+              : ex.catalog_key === "custom_reps"
+                ? Math.max(1, Math.round((ex.target_reps / 50) * 1000) / 1000)
+                : unitsPerStarBase
           const unitLabel =
-            ex.unit === "steps" ? (lang === "ru" ? "шагов" : "steps") : lang === "ru" ? "повторений" : "reps"
+            ex.unit === "steps"
+              ? lang === "ru"
+                ? "шагов"
+                : "steps"
+              : ex.unit === "minutes"
+                ? lang === "ru"
+                  ? "мин"
+                  : "min"
+                : lang === "ru"
+                  ? "повторений"
+                  : "reps"
           const starCostText =
             unitsPerStar != null && ex.unit ? `1 ★ = ${unitsPerStar} ${unitLabel}` : "—"
 

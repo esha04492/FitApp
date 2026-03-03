@@ -4,9 +4,10 @@ import { loadExerciseCatalog, type CatalogExercise } from "../lib/catalog"
 
 export type BuilderExercise = {
   catalogExerciseId: number
+  catalogKey: string | null
   name: string
   target: number
-  unit: "reps" | "steps"
+  unit: "reps" | "steps" | "minutes"
   weight: number
 }
 
@@ -26,10 +27,11 @@ export default function CustomProgramBuilder(props: {
       catalogExerciseId: number | null
       name: string
       target: number
-      unit: "reps" | "steps"
+      unit: "reps" | "steps" | "minutes"
+      catalogKey: string | null
       weight: number
     }>
-  >([{ catalogExerciseId: null, name: "", target: 0, unit: "reps", weight: 1 }])
+  >([{ catalogExerciseId: null, name: "", target: 0, unit: "reps", catalogKey: null, weight: 1 }])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -50,6 +52,11 @@ export default function CustomProgramBuilder(props: {
           createError: "Не удалось создать программу",
           reps: "повторения",
           steps: "шаги",
+          minutes: "мин",
+          customName: "Название упражнения",
+          customTargetMinutes: "Минуты",
+          customTargetReps: "Повторения",
+          fullCompletionHint: "Полностью выполненная норма ≈ 50 ★",
         }
       : {
           title: "Create your plan",
@@ -66,6 +73,11 @@ export default function CustomProgramBuilder(props: {
           createError: "Could not create program",
           reps: "reps",
           steps: "steps",
+          minutes: "min",
+          customName: "Exercise name",
+          customTargetMinutes: "Minutes",
+          customTargetReps: "Reps",
+          fullCompletionHint: "Full completion ≈ 50 ★",
         }
 
   const trExerciseName = (name: string) => {
@@ -118,13 +130,20 @@ export default function CustomProgramBuilder(props: {
 
   const updateExercise = (
     index: number,
-    patch: Partial<{ catalogExerciseId: number | null; name: string; target: number; unit: "reps" | "steps"; weight: number }>
+    patch: Partial<{
+      catalogExerciseId: number | null
+      name: string
+      target: number
+      unit: "reps" | "steps" | "minutes"
+      catalogKey: string | null
+      weight: number
+    }>
   ) => {
     setExercises((prev) => prev.map((ex, i) => (i === index ? { ...ex, ...patch } : ex)))
   }
 
   const addExercise = () => {
-    setExercises((prev) => [...prev, { catalogExerciseId: null, name: "", target: 0, unit: "reps", weight: 1 }])
+    setExercises((prev) => [...prev, { catalogExerciseId: null, name: "", target: 0, unit: "reps", catalogKey: null, weight: 1 }])
   }
 
   const removeExercise = (index: number) => {
@@ -143,7 +162,7 @@ export default function CustomProgramBuilder(props: {
   const selectExercise = (index: number, selectedIdRaw: string) => {
     const selectedId = Number(selectedIdRaw)
     if (!Number.isFinite(selectedId)) {
-      updateExercise(index, { catalogExerciseId: null, name: "", unit: "reps", target: 0, weight: 1 })
+      updateExercise(index, { catalogExerciseId: null, name: "", unit: "reps", catalogKey: null, target: 0, weight: 1 })
       return
     }
 
@@ -163,8 +182,9 @@ export default function CustomProgramBuilder(props: {
           ? {
               ...row,
               catalogExerciseId: selected.id,
-              name: selected.label,
+              name: selected.key === "custom_time" || selected.key === "custom_reps" ? "" : selected.label,
               unit: selected.unit,
+              catalogKey: selected.key,
               weight: selected.weight,
               target: row.target > 0 ? row.target : selected.default_target,
             }
@@ -182,8 +202,12 @@ export default function CustomProgramBuilder(props: {
       .filter((ex): ex is BuilderExercise => ex.catalogExerciseId != null)
       .map((ex) => ({
         catalogExerciseId: ex.catalogExerciseId,
+        catalogKey: ex.catalogKey,
         name: ex.name.trim(),
-        target: Math.max(1, Number(ex.target) || 0),
+        target:
+          ex.catalogKey === "custom_reps"
+            ? Math.max(10, Number(ex.target) || 0)
+            : Math.max(1, Number(ex.target) || 0),
         unit: ex.unit,
         weight: ex.weight,
       }))
@@ -253,19 +277,41 @@ export default function CustomProgramBuilder(props: {
               </select>
 
               <div className="grid grid-cols-2 gap-2">
+                {(ex.catalogKey === "custom_time" || ex.catalogKey === "custom_reps") ? (
+                  <input
+                    value={ex.name}
+                    onChange={(e) => updateExercise(index, { name: e.target.value })}
+                    placeholder={tx.customName}
+                    className="col-span-2 h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-100 placeholder:text-neutral-500 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
+                  />
+                ) : null}
                 <input
                   type="number"
                   inputMode="numeric"
                   value={String(ex.target)}
-                  onChange={(e) => updateExercise(index, { target: Math.max(0, Number(e.target.value) || 0) })}
+                  onChange={(e) => {
+                    const raw = Number(e.target.value) || 0
+                    const safeTarget = ex.catalogKey === "custom_reps" ? Math.max(10, raw) : Math.max(0, raw)
+                    updateExercise(index, { target: safeTarget })
+                  }}
+                  placeholder={
+                    ex.catalogKey === "custom_time"
+                      ? tx.customTargetMinutes
+                      : ex.catalogKey === "custom_reps"
+                        ? tx.customTargetReps
+                        : undefined
+                  }
                   className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-100 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
                 />
                 <input
-                  value={ex.unit === "steps" ? tx.steps : tx.reps}
+                  value={ex.unit === "steps" ? tx.steps : ex.unit === "minutes" ? tx.minutes : tx.reps}
                   readOnly
                   className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-300 outline-none"
                 />
               </div>
+              {(ex.catalogKey === "custom_time" || ex.catalogKey === "custom_reps") ? (
+                <div className="text-[11px] text-neutral-400">{tx.fullCompletionHint}</div>
+              ) : null}
             </div>
           </div>
         ))}
