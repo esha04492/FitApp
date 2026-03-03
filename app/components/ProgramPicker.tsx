@@ -21,6 +21,22 @@ export default function ProgramPicker(props: {
 }) {
   const { onPickBuiltIn, onPickCustom, loading, presets, lang, onLangChange, labels } = props
   const [confirmPreset, setConfirmPreset] = useState<{ id: string | number; title: string; description: string } | null>(null)
+  const getPresetTileClass = (title: string) => {
+    const key = title.toLowerCase()
+    if (key.includes("advanced") || key.includes("адвансед")) {
+      return "border-red-400/30 bg-red-500/10 hover:bg-red-500/15"
+    }
+    if (key.includes("через день") || key.includes("every other day")) {
+      return "border-emerald-400/30 bg-emerald-500/10 hover:bg-emerald-500/15"
+    }
+    if (key.includes("100 отжиманий + 50 подтягиваний") || key.includes("100 push-ups + 50 pull-ups")) {
+      return "border-orange-400/30 bg-orange-500/10 hover:bg-orange-500/15"
+    }
+    if (key.includes("100 отжиманий") || key.includes("100 push-ups")) {
+      return "border-amber-400/30 bg-amber-500/10 hover:bg-amber-500/15"
+    }
+    return "border-white/10 bg-white/5 hover:bg-white/10"
+  }
 
   return (
     <div className="my-auto">
@@ -50,27 +66,31 @@ export default function ProgramPicker(props: {
       </div>
 
       <div className="mt-6 space-y-3">
-        {presets.map((preset) => (
-          <button
-            key={String(preset.id)}
-            type="button"
-            disabled={loading}
-            onClick={() => setConfirmPreset(preset)}
-            className="w-full rounded-3xl border border-white/10 bg-white/5 p-5 text-left backdrop-blur transition hover:bg-white/10 active:scale-[0.99] disabled:opacity-60"
-          >
-            <div className="text-base font-semibold text-neutral-100">{preset.title}</div>
-            <div className="mt-1 text-xs text-neutral-400">{labels.builtInSubtitle}</div>
-          </button>
-        ))}
+        <div className="grid grid-cols-2 gap-3">
+          {presets.map((preset) => (
+            <button
+              key={String(preset.id)}
+              type="button"
+              disabled={loading}
+              onClick={() => setConfirmPreset(preset)}
+              className={`min-h-28 w-full rounded-3xl border p-4 text-left backdrop-blur transition active:scale-[0.99] disabled:opacity-60 ${getPresetTileClass(
+                preset.title
+              )}`}
+            >
+              <div className="text-sm font-semibold text-neutral-100">{preset.title}</div>
+              <div className="mt-1 text-[11px] text-neutral-300">{labels.builtInSubtitle}</div>
+            </button>
+          ))}
+        </div>
 
         <button
           type="button"
           disabled={loading}
           onClick={onPickCustom}
-          className="w-full rounded-3xl border border-white/10 bg-white/5 p-5 text-left backdrop-blur transition hover:bg-white/10 active:scale-[0.99] disabled:opacity-60"
+          className="w-full rounded-3xl border-2 border-sky-300/60 bg-sky-500/15 p-5 text-left backdrop-blur transition hover:bg-sky-500/20 active:scale-[0.99] disabled:opacity-60"
         >
           <div className="text-base font-semibold text-neutral-100">{labels.createOwn}</div>
-          <div className="mt-1 text-xs text-neutral-400">{labels.customSubtitle}</div>
+          <div className="mt-1 text-xs text-sky-100/90">{labels.customSubtitle}</div>
         </button>
       </div>
 
