@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 import { useEffect, useMemo, useState } from "react"
 import { supabase } from "./lib/supabase"
 import type { Exercise, HistoryEntry } from "./components/types"
@@ -35,6 +35,9 @@ const I18N: Record<
     confirmBody: string
     confirmOk: string
     confirmBack: string
+    openInsideTitle: string
+    openInsideBody: string
+    loading: string
   }
 > = {
   ru: {
@@ -57,6 +60,9 @@ const I18N: Record<
       "Эта программа представляет из себя чередующиеся 2 тренировки на протяжении 100 дней:\n• День A: отжимания двух типов, подтягивания и шаги\n• День B: пресс, приседания и шаги\nИ так по кругу, 100 дней.",
     confirmOk: "Ок",
     confirmBack: "Назад",
+    openInsideTitle: "Открой внутри Telegram",
+    openInsideBody: "Это приложение нужно открывать из Telegram-бота.",
+    loading: "Загрузка...",
   },
   en: {
     tabToday: "Today",
@@ -78,6 +84,9 @@ const I18N: Record<
       "This program alternates two workouts for 100 days:\n• Day A: two push-up types, pull-ups, and steps\n• Day B: abs, squats, and steps\nRepeat this cycle for 100 days.",
     confirmOk: "OK",
     confirmBack: "Back",
+    openInsideTitle: "Open inside Telegram",
+    openInsideBody: "This app must be opened from Telegram bot.",
+    loading: "Loading...",
   },
 }
 
@@ -688,7 +697,9 @@ export default function Home() {
       const totalPairs = userIds.map((userId) => ({ userId, totalStars: totalsByUser.get(userId) ?? 0 }))
       const sorted = totalPairs.sort((a, b) => b.totalStars - a.totalStars).slice(0, 20)
       const rows = sorted.map((item, idx) => {
-        const label = displayNameMap.get(item.userId) ?? `User ${item.userId.slice(-4)}`
+        const label =
+          displayNameMap.get(item.userId) ??
+          (lang === "ru" ? `Пользователь ${item.userId.slice(-4)}` : `User ${item.userId.slice(-4)}`)
         return {
           rank: idx + 1,
           userId: item.userId,
@@ -698,7 +709,7 @@ export default function Home() {
       })
       setLeaderboardRows(rows)
     } catch (e) {
-      setLeaderboardError(e instanceof Error ? e.message : "Unknown error")
+      setLeaderboardError(e instanceof Error ? e.message : lang === "ru" ? "Неизвестная ошибка" : "Unknown error")
     }
     setLeaderboardLoading(false)
   }
@@ -889,7 +900,7 @@ export default function Home() {
         const uid = await getOrCreateUserId()
         await loadLeaderboard(uid)
       } catch (e) {
-        setLeaderboardError(e instanceof Error ? e.message : "Unknown error")
+      setLeaderboardError(e instanceof Error ? e.message : lang === "ru" ? "Неизвестная ошибка" : "Unknown error")
       }
     }
     run()
@@ -900,7 +911,7 @@ export default function Home() {
     const uid = await getOrCreateUserId()
     const value = leaderboardDisplayName.trim()
     if (!value) {
-      setLeaderboardDisplayNameError("Name is required")
+      setLeaderboardDisplayNameError(lang === "ru" ? "Имя обязательно" : "Name is required")
       return
     }
     if (value.length > 20) {
@@ -1036,8 +1047,8 @@ export default function Home() {
       }))
       .filter((x) => x.name.length > 0)
 
-    if (!programName) return { ok: false, error: "Enter program name" }
-    if (exList.length === 0) return { ok: false, error: "Add at least one exercise" }
+    if (!programName) return { ok: false, error: lang === "ru" ? "Введите название программы" : "Enter program name" }
+    if (exList.length === 0) return { ok: false, error: lang === "ru" ? "Добавьте хотя бы одно упражнение" : "Add at least one exercise" }
 
     setIsLoadingProgram(true)
     setDbg("")
@@ -1058,7 +1069,7 @@ export default function Home() {
         | null
 
       if (!res.ok || !body?.ok || body.programId == null) {
-        const message = body?.error ?? "Could not create program"
+        const message = body?.error ?? (lang === "ru" ? "Не удалось создать программу" : "Could not create program")
         setDbg("ERROR custom program create: " + message)
         setIsLoadingProgram(false)
         return { ok: false, error: message }
@@ -1081,7 +1092,7 @@ export default function Home() {
       setIsLoadingProgram(false)
       return { ok: true }
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Unknown error"
+      const message = e instanceof Error ? e.message : lang === "ru" ? "Неизвестная ошибка" : "Unknown error"
       setDbg("ERROR custom program create: " + message)
       setIsLoadingProgram(false)
       return { ok: false, error: message }
@@ -1183,10 +1194,10 @@ export default function Home() {
     target: number
     applyTo: "today" | "program"
   }): Promise<{ ok: boolean; error?: string }> => {
-    if (programId == null) return { ok: false, error: "Program is not selected" }
+    if (programId == null) return { ok: false, error: lang === "ru" ? "Программа не выбрана" : "Program is not selected" }
     const trimmedName = payload.name.trim()
     const safeTarget = Math.max(1, Number(payload.target) || 0)
-    if (!trimmedName) return { ok: false, error: "Name is required" }
+    if (!trimmedName) return { ok: false, error: lang === "ru" ? "Название обязательно" : "Name is required" }
 
     try {
       if (payload.applyTo === "today") {
@@ -1216,7 +1227,7 @@ export default function Home() {
       await loadDay(uid, programId, day)
       return { ok: true }
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : "Unknown error" }
+      return { ok: false, error: e instanceof Error ? e.message : lang === "ru" ? "Неизвестная ошибка" : "Unknown error" }
     }
   }
 
@@ -1389,8 +1400,8 @@ export default function Home() {
     return (
       <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center px-6">
         <div className="max-w-sm text-center">
-          <div className="text-2xl font-semibold tracking-tight">Open inside Telegram</div>
-          <div className="mt-2 text-sm text-neutral-400">This app must be opened from Telegram bot.</div>
+          <div className="text-2xl font-semibold tracking-tight">{I18N[lang].openInsideTitle}</div>
+          <div className="mt-2 text-sm text-neutral-400">{I18N[lang].openInsideBody}</div>
           <div className="mt-3 text-[11px] text-neutral-500">source: {identitySource}</div>
           {identityDiagnostics ? (
             <pre className="mt-3 max-h-56 overflow-auto rounded-2xl border border-white/10 bg-white/5 p-3 text-left text-[10px] leading-relaxed text-neutral-300">
@@ -1405,7 +1416,7 @@ export default function Home() {
   if (loading || isLoadingProgram) {
     return (
       <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center">
-        <div className="text-sm text-neutral-400">Loading...</div>
+        <div className="text-sm text-neutral-400">{I18N[lang].loading}</div>
       </div>
     )
   }
@@ -1566,3 +1577,4 @@ export default function Home() {
     </div>
   )
 }
+

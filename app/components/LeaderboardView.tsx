@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 type LeaderboardRow = {
   rank: number
@@ -41,6 +41,7 @@ export default function LeaderboardView(props: {
     onSaveDisplayName,
     labels,
   } = props
+
   const l = labels ?? {
     leaderboard: "Leaderboard",
     totalStarTitle: "Total ★",

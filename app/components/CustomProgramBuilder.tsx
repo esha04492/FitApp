@@ -17,7 +17,7 @@ export default function CustomProgramBuilder(props: {
 }) {
   const { onBack, onCreate, lang = "ru" } = props
 
-  const [programName, setProgramName] = useState("My program")
+  const [programName, setProgramName] = useState(lang === "ru" ? "Моя программа" : "My program")
   const [catalog, setCatalog] = useState<CatalogExercise[]>([])
   const [catalogLoading, setCatalogLoading] = useState(true)
   const [catalogError, setCatalogError] = useState<string | null>(null)
@@ -32,6 +32,41 @@ export default function CustomProgramBuilder(props: {
   >([{ catalogExerciseId: null, name: "", target: 0, unit: "reps", weight: 1 }])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const tx =
+    lang === "ru"
+      ? {
+          title: "Создай свою программу",
+          programName: "Название программы",
+          loadingExercises: "Загрузка упражнений...",
+          delete: "Удалить",
+          duplicate: "Дублировать",
+          selectExercise: "Выбери упражнение",
+          addExercise: "Добавить упражнение",
+          createProgram: "Создать программу",
+          back: "Назад",
+          creating: "Создание...",
+          duplicateError: "Это упражнение уже выбрано",
+          createError: "Не удалось создать программу",
+          reps: "повторения",
+          steps: "шаги",
+        }
+      : {
+          title: "Create your plan",
+          programName: "Program name",
+          loadingExercises: "Loading exercises...",
+          delete: "Delete",
+          duplicate: "Duplicate",
+          selectExercise: "Select exercise",
+          addExercise: "Add exercise",
+          createProgram: "Create program",
+          back: "Back",
+          creating: "Creating...",
+          duplicateError: "This exercise is already selected",
+          createError: "Could not create program",
+          reps: "reps",
+          steps: "steps",
+        }
 
   const trExerciseName = (name: string) => {
     if (lang !== "ru") return name
@@ -117,7 +152,7 @@ export default function CustomProgramBuilder(props: {
 
     const duplicateIndex = exercises.findIndex((x, i) => i !== index && x.catalogExerciseId === selected.id)
     if (duplicateIndex !== -1) {
-      setError("This exercise is already selected")
+      setError(tx.duplicateError)
       return
     }
 
@@ -159,7 +194,7 @@ export default function CustomProgramBuilder(props: {
     })
 
     if (!result.ok) {
-      setError(result.error ?? "Could not create program")
+      setError(result.error ?? tx.createError)
     }
 
     setLoading(false)
@@ -168,9 +203,9 @@ export default function CustomProgramBuilder(props: {
   return (
     <div className="my-auto space-y-4">
       <div className="rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur">
-        <div className="text-sm font-semibold text-neutral-100">Create your plan</div>
+        <div className="text-sm font-semibold text-neutral-100">{tx.title}</div>
         <div className="mt-3">
-          <div className="text-xs text-neutral-400">Program name</div>
+          <div className="text-xs text-neutral-400">{tx.programName}</div>
           <input
             value={programName}
             onChange={(e) => setProgramName(e.target.value)}
@@ -179,7 +214,7 @@ export default function CustomProgramBuilder(props: {
         </div>
       </div>
 
-      {catalogLoading ? <div className="text-xs text-neutral-400">Loading exercises...</div> : null}
+      {catalogLoading ? <div className="text-xs text-neutral-400">{tx.loadingExercises}</div> : null}
       {catalogError ? <div className="text-xs text-red-200 break-words">{catalogError}</div> : null}
 
       <div className="space-y-3">
@@ -193,14 +228,14 @@ export default function CustomProgramBuilder(props: {
                   onClick={() => removeExercise(index)}
                   className="h-8 rounded-xl border border-red-400/30 bg-red-500/15 px-2 text-[11px] font-semibold text-red-200 transition hover:bg-red-500/25 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Delete
+                  {tx.delete}
                 </button>
                 <button
                   type="button"
                   onClick={() => duplicateExercise(index)}
                   className="h-8 rounded-xl border border-white/10 bg-white/5 px-2 text-[11px] font-semibold text-neutral-100 transition hover:bg-white/10"
                 >
-                  Duplicate
+                  {tx.duplicate}
                 </button>
               </div>
 
@@ -209,7 +244,7 @@ export default function CustomProgramBuilder(props: {
                 onChange={(e) => selectExercise(index, e.target.value)}
                 className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-100 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
               >
-                <option value="">Select exercise</option>
+                <option value="">{tx.selectExercise}</option>
                 {catalog.map((item) => (
                   <option key={item.id} value={item.id}>
                     {trExerciseName(item.label)}
@@ -226,7 +261,7 @@ export default function CustomProgramBuilder(props: {
                   className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-100 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
                 />
                 <input
-                  value={ex.unit}
+                  value={ex.unit === "steps" ? tx.steps : tx.reps}
                   readOnly
                   className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-neutral-300 outline-none"
                 />
@@ -243,7 +278,7 @@ export default function CustomProgramBuilder(props: {
             onClick={addExercise}
             className="h-11 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition active:scale-[0.99] hover:bg-white/10"
           >
-            Add exercise
+            {tx.addExercise}
           </button>
           <button
             type="button"
@@ -255,16 +290,16 @@ export default function CustomProgramBuilder(props: {
                 : "border border-white/10 bg-white/5 text-neutral-500"
             }`}
           >
-            Create program
+            {tx.createProgram}
           </button>
           <button
             type="button"
             onClick={onBack}
             className="h-11 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition active:scale-[0.99] hover:bg-white/10"
           >
-            Back
+            {tx.back}
           </button>
-          {loading ? <div className="text-xs text-neutral-400">Creating...</div> : null}
+          {loading ? <div className="text-xs text-neutral-400">{tx.creating}</div> : null}
           {error ? <div className="text-xs text-red-200 break-words">{error}</div> : null}
         </div>
       </div>
