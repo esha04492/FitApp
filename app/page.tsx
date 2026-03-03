@@ -11,8 +11,34 @@ import LeaderboardView from "./components/LeaderboardView"
 import TabBar from "./components/TabBar"
 import { clamp, computeStreaks, localISODate } from "./lib/date"
 import { loadExerciseCatalog } from "./lib/catalog"
-const PROGRAM_NAME = "100 days Advanced"
-const BUILT_IN_PROGRAM_NAMES = [PROGRAM_NAME, "100 days v.2"]
+const PRESET_PROGRAM_NAMES = [
+  "Самая база — 100 отжиманий",
+  "100 отжиманий + 50 подтягиваний",
+  "100 отжиманий через день",
+]
+const PRESET_PROGRAM_META: Record<
+  string,
+  { titleRu: string; titleEn: string; descriptionRu: string; descriptionEn: string }
+> = {
+  "Самая база — 100 отжиманий": {
+    titleRu: "Самая база — 100 отжиманий",
+    titleEn: "Basic - 100 push-ups",
+    descriptionRu: "Базовая программа на 100 дней с акцентом на отжимания.",
+    descriptionEn: "A basic 100-day program focused on push-ups.",
+  },
+  "100 отжиманий + 50 подтягиваний": {
+    titleRu: "100 отжиманий + 50 подтягиваний",
+    titleEn: "100 push-ups + 50 pull-ups",
+    descriptionRu: "Силовая программа на 100 дней: отжимания и подтягивания каждый день.",
+    descriptionEn: "A 100-day strength program with daily push-ups and pull-ups.",
+  },
+  "100 отжиманий через день": {
+    titleRu: "100 отжиманий через день",
+    titleEn: "100 push-ups every other day",
+    descriptionRu: "Программа на 100 дней в режиме через день для комфортного восстановления.",
+    descriptionEn: "A 100-day every-other-day plan for better recovery.",
+  },
+}
 type Lang = "ru" | "en"
 const I18N: Record<
   Lang,
@@ -416,6 +442,7 @@ export default function Home() {
   const [isLoadingProgram, setIsLoadingProgram] = useState(true)
   const [showProgramMenu, setShowProgramMenu] = useState(true)
   const [showCustomBuilder, setShowCustomBuilder] = useState(false)
+  const [presetProgramRows, setPresetProgramRows] = useState<Array<{ id: string | number; name: string }>>([])
 
   const [day, setDay] = useState(1)
   const [exercises, setExercises] = useState<Exercise[]>([])
@@ -458,6 +485,15 @@ export default function Home() {
   useEffect(() => {
     localStorage.setItem("tab", tab)
   }, [tab])
+
+  useEffect(() => {
+    const run = async () => {
+      if (!showProgramMenu) return
+      await loadPresetPrograms()
+    }
+    run()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showProgramMenu])
 
   const pretty = (n: number) => n.toLocaleString("en-US")
 
@@ -861,6 +897,7 @@ export default function Home() {
         setDay(1)
         setProgramId(null)
         setShowProgramMenu(true)
+        await loadPresetPrograms()
         setLoading(false)
         setIsLoadingProgram(false)
         return
@@ -874,6 +911,7 @@ export default function Home() {
       setShowProgramMenu(selectedProgramId == null)
 
       if (selectedProgramId == null) {
+        await loadPresetPrograms()
         setLoading(false)
         setIsLoadingProgram(false)
         return
@@ -884,7 +922,7 @@ export default function Home() {
       await fetchHistoryBreakdown(uid, selectedProgramId)
       await loadLeaderboard(uid)
 
-      setDbg(`OK: ${PROGRAM_NAME}, day ${currentDay}`)
+      setDbg(`OK: day ${currentDay}`)
       setLoading(false)
       setIsLoadingProgram(false)
     }
@@ -940,41 +978,56 @@ export default function Home() {
     await loadLeaderboard(uid)
   }
 
-  const chooseBuiltInProgram = async () => {
+  const loadPresetPrograms = async () => {
+    const { data, error } = await supabase
+      .from("programs")
+      .select("id,name,owner_user_id")
+      .in("name", PRESET_PROGRAM_NAMES)
+      .order("id", { ascending: false })
+      .limit(100)
+
+    if (error) {
+      setDbg("ERROR programs load: " + error.message)
+      setPresetProgramRows([])
+      return
+    }
+
+    const byName = new Map<string, { id: string | number; name: string; owner_user_id: string | null }>()
+    ;(data ?? []).forEach((row) => {
+      const name = String(row.name ?? "")
+      const existing = byName.get(name)
+      const current = {
+        id: row.id,
+        name,
+        owner_user_id: (row as { owner_user_id?: string | null }).owner_user_id ?? null,
+      }
+      if (!existing) {
+        byName.set(name, current)
+        return
+      }
+      if (existing.owner_user_id != null && current.owner_user_id == null) {
+        byName.set(name, current)
+      }
+    })
+
+    const ordered = PRESET_PROGRAM_NAMES.map((name) => byName.get(name)).filter(
+      (x): x is { id: string | number; name: string; owner_user_id: string | null } => Boolean(x)
+    )
+    setPresetProgramRows(ordered.map((x) => ({ id: x.id, name: x.name })))
+  }
+
+  const chooseBuiltInProgram = async (pickedProgramId?: string | number) => {
     const uid = await getOrCreateUserId()
     setIsLoadingProgram(true)
 
-    let selectedProgramId: string | number | null = null
+    let selectedProgramId: string | number | null = pickedProgramId ?? null
     const startDay = 1
-
-    const { data: existingBuiltIn, error: existingBuiltInErr } = await supabase
-      .from("programs")
-      .select("id")
-      .in("name", BUILT_IN_PROGRAM_NAMES)
-      .is("owner_user_id", null)
-      .order("id", { ascending: false })
-      .limit(50)
-
-    if (!existingBuiltInErr && existingBuiltIn?.length) {
-      for (const row of existingBuiltIn) {
-        const { data: firstDay } = await supabase
-          .from("program_days")
-          .select("id")
-          .eq("program_id", row.id)
-          .eq("day_number", 1)
-          .limit(1)
-        if (firstDay && firstDay.length > 0) {
-          selectedProgramId = row.id
-          break
-        }
-      }
-    }
 
     if (selectedProgramId == null) {
       const { data: anyByName, error: anyByNameErr } = await supabase
         .from("programs")
         .select("id")
-        .in("name", BUILT_IN_PROGRAM_NAMES)
+        .in("name", PRESET_PROGRAM_NAMES)
         .order("id", { ascending: false })
         .limit(50)
 
@@ -1383,7 +1436,7 @@ export default function Home() {
     await fetchHistoryBreakdown(uid, programId)
     await loadLeaderboard(uid)
 
-    setDbg(`OK: ${PROGRAM_NAME}, day ${next}`)
+    setDbg(`OK: preset, day ${next}`)
   }
 
   const totalsSplit = useMemo(() => {
@@ -1404,6 +1457,22 @@ export default function Home() {
         }))
         .sort((a, b) => a.label.localeCompare(b.label)),
     [catalogMetaById]
+  )
+
+  const presetPrograms = useMemo(
+    () =>
+      presetProgramRows.map((row) => {
+        const meta = PRESET_PROGRAM_META[row.name]
+        return {
+          id: row.id,
+          title: lang === "ru" ? (meta?.titleRu ?? row.name) : (meta?.titleEn ?? row.name),
+          description:
+            lang === "ru"
+              ? (meta?.descriptionRu ?? "Описание недоступно.")
+              : (meta?.descriptionEn ?? "Description is unavailable."),
+        }
+      }),
+    [presetProgramRows, lang]
   )
 
   const stats = useMemo(() => {
@@ -1464,6 +1533,7 @@ export default function Home() {
               onPickBuiltIn={chooseBuiltInProgram}
               onPickCustom={() => setShowCustomBuilder(true)}
               loading={isLoadingProgram}
+              presets={presetPrograms}
               lang={lang}
               onLangChange={setLang}
               labels={{
