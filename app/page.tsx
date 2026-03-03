@@ -462,7 +462,9 @@ export default function Home() {
   const [isLoadingProgram, setIsLoadingProgram] = useState(true)
   const [showProgramMenu, setShowProgramMenu] = useState(true)
   const [showCustomBuilder, setShowCustomBuilder] = useState(false)
-  const [presetProgramRows, setPresetProgramRows] = useState<Array<{ id: string | number; name: string }>>([])
+  const [presetProgramRows, setPresetProgramRows] = useState<
+    Array<{ id: string | number; name: string; isPublic: boolean; ownerUserId: string | null }>
+  >([])
 
   const [day, setDay] = useState(1)
   const [currentProgramDayId, setCurrentProgramDayId] = useState<string | null>(null)
@@ -510,7 +512,8 @@ export default function Home() {
   useEffect(() => {
     const run = async () => {
       if (!showProgramMenu) return
-      await loadPresetPrograms()
+      const uid = await getOrCreateUserId()
+      await loadPresetPrograms(uid)
     }
     run()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -891,24 +894,54 @@ export default function Home() {
         setCurrentProgramDayId(null)
         setProgramId(null)
         setShowProgramMenu(true)
-        await loadPresetPrograms()
+        await loadPresetPrograms(uid)
         setLoading(false)
         setIsLoadingProgram(false)
         return
       }
 
       const currentDay = state.current_day ?? 1
-      const selectedProgramId = state.program_id as string | number | null
+      let selectedProgramId = state.program_id as string | number | null
 
       setDay(currentDay)
       setProgramId(selectedProgramId)
       setShowProgramMenu(selectedProgramId == null)
 
       if (selectedProgramId == null) {
-        await loadPresetPrograms()
+        await loadPresetPrograms(uid)
         setLoading(false)
         setIsLoadingProgram(false)
         return
+      }
+
+      const { data: selectedProgramMeta, error: selectedProgramMetaErr } = await supabase
+        .from("programs")
+        .select("id,is_public,owner_user_id")
+        .eq("id", selectedProgramId)
+        .single()
+      if (selectedProgramMetaErr) {
+        setDbg("ERROR program meta: " + selectedProgramMetaErr.message)
+      } else if (selectedProgramMeta) {
+        const isPublicPreset = Boolean(selectedProgramMeta.is_public) && selectedProgramMeta.owner_user_id == null
+        const isPersonalProgram = !selectedProgramMeta.is_public && String(selectedProgramMeta.owner_user_id ?? "") === uid
+        if (isPublicPreset) {
+          const clone = await clonePublicProgram(selectedProgramId, uid)
+          if (clone.ok && clone.programId != null) {
+            selectedProgramId = clone.programId
+            await upsertUserStateProgram(uid, selectedProgramId, 1)
+            setDay(1)
+            setProgramId(selectedProgramId)
+          } else {
+            setDbg("ERROR program clone: " + (clone.error ?? "failed"))
+          }
+        } else if (!isPersonalProgram) {
+          setProgramId(null)
+          setShowProgramMenu(true)
+          await loadPresetPrograms(uid)
+          setLoading(false)
+          setIsLoadingProgram(false)
+          return
+        }
       }
 
       await loadDay(uid, selectedProgramId, currentDay)
@@ -972,25 +1005,106 @@ export default function Home() {
     await loadLeaderboard(uid)
   }
 
-  const loadPresetPrograms = async () => {
-    const { data, error } = await supabase
-      .from("programs")
-      .select("id,name,created_at,is_public")
-      .eq("is_public", true)
-      .order("created_at", { ascending: true })
+  const loadPresetPrograms = async (uid: string) => {
+    const [publicQuery, personalQuery] = await Promise.all([
+      supabase
+        .from("programs")
+        .select("id,name,created_at,is_public,owner_user_id")
+        .eq("is_public", true)
+        .is("owner_user_id", null)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("programs")
+        .select("id,name,created_at,is_public,owner_user_id")
+        .eq("owner_user_id", uid)
+        .eq("is_public", false)
+        .order("created_at", { ascending: true }),
+    ])
 
-    if (error) {
-      setDbg("ERROR programs load: " + error.message)
-      console.error("programs load failed:", error.message)
+    if (publicQuery.error) {
+      setDbg("ERROR programs load: " + publicQuery.error.message)
+      console.error("programs load failed:", publicQuery.error.message)
       setPresetProgramRows([])
       return
     }
+    if (personalQuery.error) {
+      setDbg("ERROR programs load: " + personalQuery.error.message)
+      console.error("programs load failed:", personalQuery.error.message)
+      setPresetProgramRows([])
+      return
+    }
+
+    const rows = [...(publicQuery.data ?? []), ...(personalQuery.data ?? [])]
     setPresetProgramRows(
-      (data ?? []).map((row) => ({
+      rows.map((row) => ({
         id: row.id,
         name: String(row.name ?? ""),
+        isPublic: Boolean(row.is_public),
+        ownerUserId: (row as { owner_user_id?: string | null }).owner_user_id ?? null,
       }))
     )
+  }
+
+  const upsertUserStateProgram = async (uid: string, selectedProgramId: string | number, startDay: number) => {
+    const { data: updatedRows, error: updateErr } = await supabase
+      .from("user_state")
+      .update({ program_id: selectedProgramId, current_day: startDay })
+      .eq("user_id", uid)
+      .select("user_id")
+      .limit(1)
+
+    if (updateErr) {
+      setDbg("ERROR program assign: " + updateErr.message)
+      return false
+    }
+    if (!updatedRows || updatedRows.length === 0) {
+      const { error: insertStateErr } = await supabase
+        .from("user_state")
+        .insert({ user_id: uid, program_id: selectedProgramId, current_day: startDay })
+      if (insertStateErr) {
+        setDbg("ERROR user_state create: " + insertStateErr.message)
+        return false
+      }
+    }
+    return true
+  }
+
+  const clonePublicProgram = async (presetId: string | number, uid: string): Promise<{ ok: boolean; programId?: string | number; error?: string }> => {
+    const attempts: Array<Record<string, string | number>> = [
+      { presetId, userId: uid },
+      { preset_id: presetId, user_id: uid },
+      { source_program_id: presetId, target_user_id: uid },
+    ]
+
+    for (const args of attempts) {
+      const { data, error } = await supabase.rpc("clone_program", args)
+      if (error) continue
+
+      let programId: string | number | null = null
+      if (typeof data === "string" || typeof data === "number") {
+        programId = data
+      } else if (Array.isArray(data) && data.length > 0) {
+        const row = data[0] as Record<string, unknown>
+        programId =
+          (row.new_program_id as string | number | undefined) ??
+          (row.program_id as string | number | undefined) ??
+          (row.id as string | number | undefined) ??
+          (Object.values(row)[0] as string | number | undefined) ??
+          null
+      } else if (data && typeof data === "object") {
+        const row = data as Record<string, unknown>
+        programId =
+          (row.new_program_id as string | number | undefined) ??
+          (row.program_id as string | number | undefined) ??
+          (row.id as string | number | undefined) ??
+          (Object.values(row)[0] as string | number | undefined) ??
+          null
+      }
+
+      if (programId != null) return { ok: true, programId }
+    }
+
+    return { ok: false, error: "clone_program failed" }
   }
 
   const chooseBuiltInProgram = async (pickedProgramId?: string | number) => {
@@ -1001,31 +1115,38 @@ export default function Home() {
     const startDay = 1
 
     if (selectedProgramId == null) {
-      const { data: anyPublic, error: anyPublicErr } = await supabase
-        .from("programs")
-        .select("id")
-        .eq("is_public", true)
-        .order("created_at", { ascending: true })
-        .limit(50)
-
-      if (!anyPublicErr && anyPublic?.length) {
-        for (const row of anyPublic) {
-          const { data: firstDay } = await supabase
-            .from("program_days")
-            .select("id")
-            .eq("program_id", row.id)
-            .eq("day_number", 1)
-            .limit(1)
-          if (firstDay && firstDay.length > 0) {
-            selectedProgramId = row.id
-            break
-          }
-        }
-      }
+      selectedProgramId = presetProgramRows[0]?.id ?? null
     }
 
     if (selectedProgramId == null) {
       setDbg("ERROR program select: built-in program not found")
+      setIsLoadingProgram(false)
+      return
+    }
+
+    const { data: pickedProgram, error: pickedErr } = await supabase
+      .from("programs")
+      .select("id,is_public,owner_user_id")
+      .eq("id", selectedProgramId)
+      .single()
+    if (pickedErr || !pickedProgram) {
+      setDbg("ERROR program select: " + (pickedErr?.message ?? "program not found"))
+      setIsLoadingProgram(false)
+      return
+    }
+
+    const isPublicPreset = Boolean(pickedProgram.is_public) && (pickedProgram.owner_user_id == null)
+    const isPersonalProgram = !pickedProgram.is_public && String(pickedProgram.owner_user_id ?? "") === uid
+    if (isPublicPreset) {
+      const clone = await clonePublicProgram(selectedProgramId, uid)
+      if (!clone.ok || clone.programId == null) {
+        setDbg("ERROR program clone: " + (clone.error ?? "failed"))
+        setIsLoadingProgram(false)
+        return
+      }
+      selectedProgramId = clone.programId
+    } else if (!isPersonalProgram) {
+      setDbg("ERROR program select: access denied")
       setIsLoadingProgram(false)
       return
     }
@@ -1035,24 +1156,7 @@ export default function Home() {
     setShowCustomBuilder(false)
     setTab("today")
     setDay(startDay)
-
-    const { data: updatedRows, error: updateErr } = await supabase
-      .from("user_state")
-      .update({ program_id: selectedProgramId, current_day: startDay })
-      .eq("user_id", uid)
-      .select("user_id")
-      .limit(1)
-
-    if (updateErr) {
-      setDbg("ERROR program assign: " + updateErr.message)
-    } else if (!updatedRows || updatedRows.length === 0) {
-      const { error: insertStateErr } = await supabase
-        .from("user_state")
-        .insert({ user_id: uid, program_id: selectedProgramId, current_day: startDay })
-      if (insertStateErr) {
-        setDbg("ERROR user_state create: " + insertStateErr.message)
-      }
-    }
+    await upsertUserStateProgram(uid, selectedProgramId, startDay)
 
     await loadDay(uid, selectedProgramId, startDay)
     await fetchHistory(uid, selectedProgramId)
@@ -1821,7 +1925,31 @@ export default function Home() {
               if (programId != null) {
                 await supabase.from("user_day_history").delete().eq("user_id", uid).eq("program_id", programId)
                 await supabase.from("user_day_history_exercises").delete().eq("user_id", uid).eq("program_id", programId)
+
+                const { data: programMeta } = await supabase
+                  .from("programs")
+                  .select("id,owner_user_id,is_public")
+                  .eq("id", programId)
+                  .single()
+                const shouldDeleteProgram =
+                  Boolean(programMeta) &&
+                  String((programMeta as { owner_user_id?: string | null }).owner_user_id ?? "") === uid &&
+                  !(programMeta as { is_public?: boolean }).is_public
+
+                if (shouldDeleteProgram) {
+                  const { data: dayRows } = await supabase
+                    .from("program_days")
+                    .select("id")
+                    .eq("program_id", programId)
+                  const dayIds = (dayRows ?? []).map((d) => d.id)
+                  if (dayIds.length > 0) {
+                    await supabase.from("day_exercises").delete().in("program_day_id", dayIds)
+                    await supabase.from("program_days").delete().in("id", dayIds)
+                  }
+                  await supabase.from("programs").delete().eq("id", programId)
+                }
               }
+              await loadPresetPrograms(uid)
 
               const { data: updatedRows, error: updateErr } = await supabase
                 .from("user_state")
