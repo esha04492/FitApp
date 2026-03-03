@@ -1,5 +1,5 @@
 ﻿"use client"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 export default function ProgramPicker(props: {
   onPickBuiltIn: (programId: string | number) => Promise<void>
@@ -21,6 +21,24 @@ export default function ProgramPicker(props: {
 }) {
   const { onPickBuiltIn, onPickCustom, loading, presets, lang, onLangChange, labels } = props
   const [confirmPreset, setConfirmPreset] = useState<{ id: string | number; title: string; description: string } | null>(null)
+  const [showIntro, setShowIntro] = useState(false)
+
+  const introBody =
+    lang === "ru"
+      ? "Привет! Это приложение для ежедневных тренировок 100 дней подряд.\nВыбирай программу или создавай свою — и начинай двигаться к результату."
+      : "Hi! This app is for daily workouts for 100 days in a row.\nChoose a program or create your own and start moving toward your result."
+  const introOk = lang === "ru" ? "ОК" : "OK"
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    setShowIntro(localStorage.getItem("program_picker_intro_seen") !== "true")
+  }, [])
+
+  const closeIntro = () => {
+    localStorage.setItem("program_picker_intro_seen", "true")
+    setShowIntro(false)
+  }
+
   const getPresetTileClass = (title: string) => {
     const key = title.toLowerCase()
     if (key.includes("advanced") || key.includes("адвансед")) {
@@ -64,6 +82,29 @@ export default function ProgramPicker(props: {
       <div className="text-center">
         <div className="mt-1 text-2xl font-semibold tracking-tight">{labels.welcome}</div>
       </div>
+
+      {showIntro ? (
+        <div className="relative mt-4 rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+          <button
+            type="button"
+            onClick={closeIntro}
+            className="absolute right-3 top-3 h-7 w-7 rounded-full border border-white/10 bg-white/5 text-xs text-neutral-300 transition hover:bg-white/10 hover:text-neutral-100"
+            aria-label="Close intro"
+          >
+            X
+          </button>
+          <div className="pr-10 text-center">
+            <p className="whitespace-pre-line text-xs leading-relaxed text-neutral-300">{introBody}</p>
+            <button
+              type="button"
+              onClick={closeIntro}
+              className="mt-3 h-9 rounded-xl border border-white/10 bg-white/5 px-4 text-xs font-semibold text-neutral-100 transition hover:bg-white/10"
+            >
+              {introOk}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="mt-6 space-y-3">
         <div className="grid grid-cols-2 gap-3">
