@@ -1,0 +1,24 @@
+name: Reminders
+
+on:
+  schedule:
+    - cron: "0 8 * * *"
+    - cron: "0 20 * * *"
+  workflow_dispatch:
+
+jobs:
+  remind-daily:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 8 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call daily reminder endpoint
+        run: |
+          curl -fsS "${{ secrets.REMIND_DAILY_URL }}?secret=${{ secrets.REMIND_SECRET }}"
+
+  remind-support:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 20 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call support reminder endpoint
+        run: |
+          curl -fsS "${{ secrets.REMIND_SUPPORT_URL }}?secret=${{ secrets.REMIND_SECRET }}"
