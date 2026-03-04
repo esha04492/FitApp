@@ -62,6 +62,7 @@ export default function StatsView(props: {
           support: "Поддержка",
           supportHint: "Если что-то сломалось или есть идеи, напиши:",
           supportBtn: "Написать в Telegram",
+          supportProjectBtn: "Поддержать проект",
         }
       : {
           title: "Statistics",
@@ -86,6 +87,7 @@ export default function StatsView(props: {
           support: "Support",
           supportHint: "If something is broken or you have ideas, message:",
           supportBtn: "Write in Telegram",
+          supportProjectBtn: "Support the project",
         }
 
   const last = useMemo(() => {
@@ -216,14 +218,24 @@ export default function StatsView(props: {
         <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
           <div className="text-sm font-semibold">{tx.support}</div>
           <div className="mt-1 text-xs text-neutral-400">{tx.supportHint}</div>
-          <a
-            href="https://t.me/esha04"
-            target="_blank"
-            rel="noreferrer"
-            className="mt-3 inline-flex h-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition active:scale-[0.99] hover:bg-white/10"
-          >
-            {tx.supportBtn}
-          </a>
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <a
+              href="https://t.me/esha04"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-neutral-100 transition active:scale-[0.99] hover:bg-white/10"
+            >
+              {tx.supportBtn}
+            </a>
+            <a
+              href="https://boosty.to/esha04"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-11 items-center justify-center rounded-2xl bg-gradient-to-r from-indigo-400 via-fuchsia-400 to-sky-400 px-4 text-sm font-semibold text-neutral-950 shadow-sm transition active:scale-[0.99] hover:brightness-110"
+            >
+              {tx.supportProjectBtn}
+            </a>
+          </div>
         </div>
       </div>
     </>
