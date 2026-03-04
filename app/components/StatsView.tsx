@@ -228,7 +228,7 @@ export default function StatsView(props: {
               {tx.supportBtn}
             </a>
             <a
-              href="https://boosty.to/esha04"
+              href="https://boosty.to/fitstreak/purchase/3827839?ssource=DIRECT&share=subscription_link"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex h-11 items-center justify-center rounded-2xl bg-gradient-to-r from-indigo-400 via-fuchsia-400 to-sky-400 px-4 text-sm font-semibold text-neutral-950 shadow-sm transition active:scale-[0.99] hover:brightness-110"
