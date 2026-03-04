@@ -473,6 +473,7 @@ export default function Home() {
 
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [historyByExercise, setHistoryByExercise] = useState<Record<string, number>>({})
+  const [historyTotalsSplit, setHistoryTotalsSplit] = useState<{ steps: number; others: number }>({ steps: 0, others: 0 })
   const [myTotalStars, setMyTotalStars] = useState(0)
   const [leaderboardRows, setLeaderboardRows] = useState<
     Array<{ rank: number; userId: string; label: string; totalStars: number }>
@@ -548,7 +549,7 @@ export default function Home() {
   const fetchHistoryBreakdown = async (uid: string, pid: string | number) => {
     const { data, error } = await supabase
       .from("user_day_history_exercises")
-      .select("exercise_name,reps_done")
+      .select("exercise_name,reps_done,unit_override,catalog_exercise_id")
       .eq("user_id", uid)
       .eq("program_id", pid)
       .limit(10000)
@@ -558,11 +559,38 @@ export default function Home() {
       return
     }
 
+    const { data: catalogRows, error: catalogErr } = await supabase.from("exercise_catalog").select("id,unit")
+    if (catalogErr) {
+      setDbg("ERROR catalog units: " + catalogErr.message)
+    }
+    const unitByCatalogId = new Map<number, string>()
+    ;(catalogRows ?? []).forEach((r) => {
+      const id = Number((r as { id?: number | string }).id)
+      if (Number.isFinite(id)) {
+        unitByCatalogId.set(id, String((r as { unit?: string | null }).unit ?? ""))
+      }
+    })
+
     const map: Record<string, number> = {}
+    let steps = 0
+    let others = 0
     data?.forEach((r) => {
-      map[r.exercise_name] = (map[r.exercise_name] || 0) + r.reps_done
+      const done = Number((r as { reps_done?: number | null }).reps_done) || 0
+      const exerciseName = String((r as { exercise_name?: string | null }).exercise_name ?? "")
+      map[exerciseName] = (map[exerciseName] || 0) + done
+
+      const unitOverride = String((r as { unit_override?: string | null }).unit_override ?? "")
+      const catalogId = Number((r as { catalog_exercise_id?: number | null }).catalog_exercise_id)
+      const catalogUnit = Number.isFinite(catalogId) ? String(unitByCatalogId.get(catalogId) ?? "") : ""
+      const unit = unitOverride || catalogUnit
+      if (unit === "steps") {
+        steps += done
+      } else {
+        others += done
+      }
     })
     setHistoryByExercise(map)
+    setHistoryTotalsSplit({ steps, others })
   }
 
   const ensureCatalogMeta = async () => {
@@ -1760,12 +1788,7 @@ export default function Home() {
     setDbg(`OK: preset, day ${next}`)
   }
 
-  const totalsSplit = useMemo(() => {
-    const entries = Object.entries(historyByExercise)
-    const steps = entries.reduce((s, [name, v]) => s + (/step/i.test(name) ? v : 0), 0)
-    const others = entries.reduce((s, [name, v]) => s + (/step/i.test(name) ? 0 : v), 0)
-    return { steps, others }
-  }, [historyByExercise])
+  const totalsSplit = historyTotalsSplit
 
   const editCatalogOptions = useMemo(
     () =>
@@ -2048,6 +2071,7 @@ export default function Home() {
               setCustomInput({})
               setHistory([])
               setHistoryByExercise({})
+              setHistoryTotalsSplit({ steps: 0, others: 0 })
               setMyTotalStars(0)
               setLeaderboardRows([])
               setShowLeaderboardNameForm(false)
