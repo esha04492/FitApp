@@ -455,7 +455,7 @@ async function persistTelegramProfile(internalUserId: string, debugEnabled: bool
 export default function Home() {
   const [dbg, setDbg] = useState<string>("")
   const [tab, setTab] = useState<"today" | "stats" | "leaderboard">("today")
-  const [lang, setLang] = useState<Lang>("ru")
+  const [lang, setLang] = useState<Lang>("en")
 
   const [loading, setLoading] = useState(true)
   const [programId, setProgramId] = useState<string | number | null>(null)
